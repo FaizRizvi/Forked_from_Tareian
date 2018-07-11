@@ -1,1 +1,1 @@
-# A directory of scripts used in for my thesis. 
+# A directory of scripts used for my thesis. 
