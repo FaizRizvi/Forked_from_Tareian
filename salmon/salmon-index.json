@@ -1,0 +1,4 @@
+{
+  "fasta_file": {"class": "File", "location": "/Users/caz3so/temp/hg19_CDNA.fa.gz"},
+  "output_filename": "output",
+}

@@ -1,0 +1,9 @@
+{
+  "libtype": "A",
+  "index_file": {"class": "Directory", "location": "/Users/caz3so/Dropbox/salmon_trial/hg19_index/"},
+  "fastq1_file": {"class": "File", "location": "/Users/caz3so/Dropbox/salmon_trial/ERR188021_1.fastq.gz"},
+  "fastq2_file": {"class": "File", "location": "/Users/caz3so/Dropbox/salmon_trial/ERR188021_2.fastq.gz"},
+  "gc_bias": true,
+  "sequence_bias": true,
+  "output_filename": "output"
+}
