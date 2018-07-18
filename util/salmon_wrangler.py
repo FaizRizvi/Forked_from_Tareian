@@ -1,4 +1,4 @@
-cd /Users/caz3so/Dropbox/data/salmon_collected_quants
+cd /Users/caz3so/Dropbox/thesis/data/20180712_GEUVADIS_SALMON_QUANTS/quants
 
 import glob
 import seaborn as sns
@@ -15,14 +15,20 @@ list_of_dfs = [pd.read_csv(filename, header=0, sep="\t", usecols=[0,4], names=["
 # then dataframe #2 and filename #2
 # etc
 # and assigning that filename as a new column in the dataframe
-for dataframe, filename in zip(list_of_dfs, filenames):
-    dataframe['filename'] = filename
+#for dataframe, filename in zip(list_of_dfs, filenames):
+#    dataframe['filename'] = filename
 
 result = pd.concat(list_of_dfs, axis=1)
 result['summation'] = result.sum(axis=1)
-result = result[result.summation >= 1]
+result = result[result.summation >= 10]
+result = result.sort_values("summation")
+result = result.drop("summation", axis=1)
 
-heater = sns.heatmap(result, xticklabels=False, yticklabels=False)
+top_100 = result.head(100)
+bottom_100 = result.tail(100)
+top_bottom = top_100.append(bottom_100)
+
+heater = sns.heatmap(top_bottom, xticklabels=False, yticklabels=False)
 
 result.to_csv("Salmon_combined_counts.csv", sep="\t")
 
