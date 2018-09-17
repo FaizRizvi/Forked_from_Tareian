@@ -1,0 +1,7 @@
+lambda,prior,method,line_type,line_color,line_width
+1,,'bStARS','-',pink,regWidth
+.5,,'bStARS','-',mediumRed,regWidth
+.25,,'bStARS','-',darkRed,regWidth
+.5,'_TFmRNA','bStARS','-',mediumBlue,regWidth
+.25,'_TFmRNA','bStARS','-',lightBlue,regWidth
+1,'_TFmRNA','bStARS','-',darkBlue,regWidth
