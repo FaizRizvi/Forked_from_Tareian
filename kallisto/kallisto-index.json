@@ -1,4 +1,0 @@
-{
-  "input_filename": "hg19_index",
-  "fasta_file": {"class": "File", "location": "/Users/caz3so/Dropbox/salmon_trial/hg19_CDNA.fa.gz"},
-}

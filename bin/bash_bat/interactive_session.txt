@@ -1,0 +1,6 @@
+
+bsub -W 12:00 -M 32000 -n 8 -Is bash
+
+doproxy
+
+module load R/3.5.0
