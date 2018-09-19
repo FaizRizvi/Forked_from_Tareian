@@ -5,6 +5,7 @@ import MOODS.scan
 import MOODS.tools
 import MOODS.parsers
 
+import snippets
 import os
 import sys
 import argparse
@@ -22,6 +23,8 @@ parser.add_argument("-v", "--verbosity", action="count", default=0, help='verbos
 parser.add_argument("-b", "--BED",  help="Input DHS Bed file")
 parser.add_argument("-z", "--MOODS", help="Run Moods", action="store")
 parser.add_argument('-T','--tf', action='store', dest='tf_name_file', help='A tab-delimited file that has TF Name and Motif Name)')
+parser.add_argument("-c", "--CHIP", help="Folder containing ChIP BED files", action="store_true")
+parser.add_argument("-d", "--domain_bed", dest='domain_bed', help="BED file containing domain calls")
 
 #MOODS OPTIONS - input files
 input_group = parser.add_argument_group("input files (at least one matrix and sequence file required)")
@@ -49,9 +52,6 @@ option_group.add_argument('--bg', metavar=('pA', 'pC', 'pG', 'pT'), nargs=4, act
 option_group.add_argument('--ps', metavar='p', action='store', dest='ps', type=float, help='specify pseudocount for log-odds conversion (default = 0.1)', default = 0.01)# bg
 option_group.add_argument('--log-base', metavar='x', action='store', dest='log_base', type=float, help='logarithm base for log-odds conversion (default natural logarithm)')
 option_group.add_argument('--lo-bg', metavar=('pA', 'pC', 'pG', 'pT'), nargs=4, action='store', type=float, dest='lo_bg', default = [0.25,0.25,0.25,0.25], help='background distribution for log-odds conversion (default is 0.25 for all alleles)')
-
-#CHIP OPTIONS
-parser.add_argument("-c", "--CHIP", help="Folder containing ChIP BED files", action="store_true")
 
 #set the arguments from the command line to variables in the args object
 args = parser.parse_args()
@@ -367,50 +367,28 @@ MOTIF_HITS = args.output_file
 # Motif_ID		TF_Name
 # M00116_1.97d	TFAP2B
 
+# Manipulate the list to get the selected feature
 #Set the variable to the argument that was given for the file name
 tf_name_file = args.tf_name_file
 
 # create a dataframe from the TF_Name list
 TF_df = pd.read_csv(tf_name_file, sep="\t", header=0)
 
-# Manipulate the list to get the selected feature
-TF_names_df = pd.DataFrame()
-TF_names_df["Motif"] = TF_df["Motif_ID"]
-TF_names_df["TF"] = TF_df["TF_Name"]
-TF_names_df.set_index("Motif")
-
 # Crete a dictionary of motif names and tf names
-dicted = dict(zip(TF_names_df.Motif, TF_names_df.TF))
+dicted = snippets.dict_TF_df(TF_df)
 
-def parse_moods(x):
-	df = pd.read_csv(x, header=None, sep="|")
-
-	df[1] = df[1].str.replace('_JASPAR.txt.pfm', '')
-
-	df.drop(6, axis=1, inplace=True)
-
-	df_tmp1 = df[0].str.split(":", expand=True)
-	df_tmp2 = df_tmp1[1].str.split("-", expand=True)
-
-	df.drop(columns=0, inplace=True)
-
-	df["chr"] = df_tmp1[0]
-	df["start"] = df_tmp2[0]
-	df["stop"] = df_tmp2[1]
-
-	df.columns = ["MOTIF_ID", "TF_POS", "STRAND", "MATCH_SCORE", "MOTIF_SEQ", "chr", "start", "stop"]
-
-	df["TF_start"] = df["start"].apply(int) + 1 + df["TF_POS"]
-	df["TF_end"] = df["TF_start"] + df["MOTIF_SEQ"].str.len() - 1
-	df["PEAK_ID"] = df["chr"] + "_" + df["start"].map(str) + "_" + df["stop"].map(str)
-	df["MOTIF_POS"] = df["chr"] + "_" + df["TF_start"].map(str) + "_" + df["TF_end"].map(str)
-	df["MOTIF_LEN"] = df["TF_end"] - df["TF_start"] + 1
-	df["TF_Name"] = df["MOTIF_ID"].map(dicted)
-
-	return df
-
-y = parse_moods(MOTIF_HITS)
+a = snippets.parse_moods(MOTIF_HITS, dicted)
 
 MOTIF_HITS_BED = MOTIF_HITS.replace(".txt", ".bed")
 
-y.to_csv(MOTIF_HITS_BED, sep="\t", index=False)
+a.sort_values(by=['chr', "TF_start", "TF_end"], inplace=True)
+
+a.to_csv(MOTIF_HITS_BED, sep="\t", index=False, header=False)
+
+DOMAIN_BED = args.domain_bed
+
+####################################------------CHECKPOINT 3-----------------###################################
+# From here the parsed Moods file will be in a BED format and will be intersected with the RE lists of interest and also the domains.
+################################################################################################################
+
+motif_domain_df = snippets.bed_intersect(MOTIF_HITS_BED, DOMAIN_BED)
