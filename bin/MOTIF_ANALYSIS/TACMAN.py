@@ -398,8 +398,6 @@ TF_domain_intersect = snippets.bed_intersect(MOTIF_HITS_BED, DOMAIN_BED, False)
 
 TF_domain_RE_intersect_df =  snippets.bed_intersect(RE_BED, TF_domain_intersect, True)
 
-TF_domain_RE_intersect_df
-
 TF_domain_RE_intersect_df["RE_ID"] = TF_domain_RE_intersect_df[0] + "_" + TF_domain_RE_intersect_df[1].apply(str) + "_" + TF_domain_RE_intersect_df[2].apply(str)
 TF_domain_RE_intersect_df["SUB_ID"] = TF_domain_RE_intersect_df[0] + "_" + TF_domain_RE_intersect_df[18].apply(str) + "_" + TF_domain_RE_intersect_df[19].apply(str)
 
@@ -416,12 +414,26 @@ print ("Parsing ChIP")
 geos_df = snippets.parse_GEOS(GEOS_META)
 
 geos_df = geos_df[geos_df.Type != "viral_protein"]
+print (geos_df)
 
-for i in CHIP_BED:
-	print (os.path.basename(i))
+CHIP_group_df = snippets.parse_CHIP(CHIP_BED, geos_df)
+print (CHIP_group_df)
 
-MODES = ["MODE1", "MODE2", "MODE3", "MODE4"]
+replicate_groups = CHIP_group_df["TF_Name"].unique()
 
-#construct meta file that has the filename and path and also the TF name associated with itself.
-# Then I want to groupby the TF name and merge common methods into the same fileself.
-# I then want to compare the different modes based on the same thresh
+rep_group_counts = CHIP_group_df.groupby(["TF_Name", "MODE"]).count()
+rep_group_counts.drop([0], axis=1, inplace=True)
+rep_group_counts.reset_index(inplace=True)
+
+rep_group_replicates = rep_group_counts[rep_group_counts.Sample_Name != 1]
+
+unique_TF_Rep = rep_group_replicates["TF_Name"].unique()
+print (unique_TF_Rep)
+
+column_num = []
+
+for i in CHIP_group_df["file_path"]:
+	df = pd.read_csv(str(i), sep="\t", header=None)
+	column_num.append(len(df.columns))
+
+print (column_num)

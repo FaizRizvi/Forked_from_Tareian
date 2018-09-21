@@ -37,13 +37,32 @@ def dict_TF_df(x):
 
 	return dicted
 
+def parse_CHIP(x, y):
+    df = pd.DataFrame.from_dict(x)
+
+    df["Basename"] = df[0].apply(os.path.basename)
+    df["File_ext"] = df.Basename.str.split("_").str[-1]
+    df["MODE"] = df.File_ext.str.split(".").str[0]
+    df["Sample_Name"] = df.Basename.str.split("_").str[0]
+
+    df.drop("File_ext", axis=1, inplace=True)
+    df.drop("Basename", axis=1, inplace=True)
+
+    dicted = dict(zip(y.Sample_Name, y.TF))
+
+    df["TF_Name"] = df["Sample_Name"].map(dicted)
+    df.dropna(inplace=True)
+    df["file_path"] = df[0]
+
+    return df
+
 def parse_GEOS(x):
-	df = pd.read_csv(x, sep="\t", header=None, usecols=[1, 13])
+	df = pd.read_csv(x, sep="\t", header=None, usecols=[1, 13], names=["Sample_Name", "info"])
 
-	df["TF"] = df[13].str.split(":").str[3]
-	df["Type"] = df[13].str.split(":").str[1]
+	df["TF"] = df["info"].str.split(":").str[3]
+	df["Type"] = df["info"].str.split(":").str[1]
 
-	df.drop([13], axis=1, inplace=True)
+	df.drop(["info"], axis=1, inplace=True)
 
 	histone_markers_list = ["H3K27ac", "H3K27me3", "H3K36me3", "H3K4me1", "H3K4me2", "H3K4me3", "H3K9ac", "H3K9me3", "H3K79me2"]
 	for i in histone_markers_list:
