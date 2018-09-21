@@ -10,6 +10,21 @@ import pandas as pd
 import seaborn as sns
 import pybedtools
 
+def bed_intersect(x, y, z):
+    a = pybedtools.BedTool(x)
+    b = pybedtools.BedTool(y)
+
+    a_and_b = a.intersect(b, wa=True, wb=True)
+
+    c = a_and_b.moveto("TF_domain.bed")
+
+    df = c.to_dataframe()
+
+    if z == True:
+        return df
+    else:
+        return c
+
 def dict_TF_df(x):
 	df = pd.DataFrame()
 
@@ -21,6 +36,20 @@ def dict_TF_df(x):
 	dicted = dict(zip(df.Motif, df.TF))
 
 	return dicted
+
+def parse_GEOS(x):
+	df = pd.read_csv(x, sep="\t", header=None, usecols=[1, 13])
+
+	df["TF"] = df[13].str.split(":").str[3]
+	df["Type"] = df[13].str.split(":").str[1]
+
+	df.drop([13], axis=1, inplace=True)
+
+	histone_markers_list = ["H3K27ac", "H3K27me3", "H3K36me3", "H3K4me1", "H3K4me2", "H3K4me3", "H3K9ac", "H3K9me3", "H3K79me2"]
+	for i in histone_markers_list:
+		df = df[df.TF != i]
+
+	return df
 
 def parse_moods(x, y):
 	df = pd.read_csv(x, header=None, sep="|")
@@ -50,15 +79,3 @@ def parse_moods(x, y):
 	df.drop(columns=["TF_POS", "MOTIF_ID", "MATCH_SCORE", "MOTIF_SEQ", "STRAND", "start", "stop"], inplace=True)
 
 	return df
-
-def bed_intersect(x, y):
-    a = pybedtools.BedTool(x)
-    b = pybedtools.BedTool(y)
-
-    a_and_b = a.intersect(b, wa=True, wb=True)
-
-    c = a_and_b.moveto("TF_domain.bed")
-
-    df = c.to_dataframe()
-
-    return df

@@ -23,8 +23,10 @@ parser.add_argument("-v", "--verbosity", action="count", default=0, help='verbos
 parser.add_argument("-b", "--BED",  help="Input DHS Bed file")
 parser.add_argument("-z", "--MOODS", help="Run Moods", action="store")
 parser.add_argument('-T','--tf', action='store', dest='tf_name_file', help='A tab-delimited file that has TF Name and Motif Name)')
-parser.add_argument("-c", "--CHIP", help="Folder containing ChIP BED files", action="store_true")
 parser.add_argument("-d", "--domain_bed", dest='domain_bed', help="BED file containing domain calls")
+parser.add_argument("-r", "--RE_bed", dest='RE_bed', help="BED file containing RE annotations")
+parser.add_argument("-c", "--CHIP", nargs='+', action='store', dest='CHIP_bed', help='ChIP BED files', default = [])
+parser.add_argument("-G", "--GEOS_meta", dest='GEOS_meta', help="GEOS meta file from MARIO")
 
 #MOODS OPTIONS - input files
 input_group = parser.add_argument_group("input files (at least one matrix and sequence file required)")
@@ -56,12 +58,18 @@ option_group.add_argument('--lo-bg', metavar=('pA', 'pC', 'pG', 'pT'), nargs=4, 
 #set the arguments from the command line to variables in the args object
 args = parser.parse_args()
 
+#set variables
+MOTIF_HITS = args.output_file
+TF_NAME_FILE = args.tf_name_file
+DOMAIN_BED = args.domain_bed
+RE_BED = args.RE_bed
+CHIP_BED = args.CHIP_bed
+GEOS_META = args.GEOS_meta
 ##########################-----------CHECKPOINT 1------------#################################
 # this If statement will determine whether MOODS needs to be run based on the input arguments.
 ##############################################################################################
-
 if args.MOODS == "T":
-
+	print ("Running MOODS")
 	###########################################------MOODS-------#############################################
 	###### This was lifted from the dna_MOODS.py file that came with MOODS 1.9.3. All I did was copy and paste
 	###### and integrate into my pipeline.
@@ -356,23 +364,18 @@ if args.MOODS == "T":
 else:
 		print ("Not in the MOODs...")
 
-MOTIF_HITS = args.output_file
-
 ####################################------------CHECKPOINT 2-----------------###################################
 # From here on the script will process the motif file that was produced from MOODS or provided as the -o option.
 ################################################################################################################
-
 # The TF file must look something ilke the following with a header column that matches the following column IDs.
 #
 # Motif_ID		TF_Name
 # M00116_1.97d	TFAP2B
-
+print ("Parsing MOODS")
 # Manipulate the list to get the selected feature
-#Set the variable to the argument that was given for the file name
-tf_name_file = args.tf_name_file
-
-# create a dataframe from the TF_Name list
-TF_df = pd.read_csv(tf_name_file, sep="\t", header=0)
+# Set the variable to the argument that was given for the file name
+# create a datasframe from the TF_Name list
+TF_df = pd.read_csv(TF_NAME_FILE, sep="\t", header=0)
 
 # Crete a dictionary of motif names and tf names
 dicted = snippets.dict_TF_df(TF_df)
@@ -385,10 +388,40 @@ a.sort_values(by=['chr', "TF_start", "TF_end"], inplace=True)
 
 a.to_csv(MOTIF_HITS_BED, sep="\t", index=False, header=False)
 
-DOMAIN_BED = args.domain_bed
-
 ####################################------------CHECKPOINT 3-----------------###################################
 # From here the parsed Moods file will be in a BED format and will be intersected with the RE lists of interest and also the domains.
 ################################################################################################################
+print ("Finding Intersections")
+print ("################################################################################################################")
 
-motif_domain_df = snippets.bed_intersect(MOTIF_HITS_BED, DOMAIN_BED)
+TF_domain_intersect = snippets.bed_intersect(MOTIF_HITS_BED, DOMAIN_BED, False)
+
+TF_domain_RE_intersect_df =  snippets.bed_intersect(RE_BED, TF_domain_intersect, True)
+
+TF_domain_RE_intersect_df
+
+TF_domain_RE_intersect_df["RE_ID"] = TF_domain_RE_intersect_df[0] + "_" + TF_domain_RE_intersect_df[1].apply(str) + "_" + TF_domain_RE_intersect_df[2].apply(str)
+TF_domain_RE_intersect_df["SUB_ID"] = TF_domain_RE_intersect_df[0] + "_" + TF_domain_RE_intersect_df[18].apply(str) + "_" + TF_domain_RE_intersect_df[19].apply(str)
+
+TF_domain_RE_intersect_df.drop([1, 2, 5, 6, 7, 12, 13, 14, 16, 17, 18, 19, 20], axis=1, inplace=True)
+
+####################################------------CHECKPOINT 4-----------------###################################
+# The next step is to import the ChIP files from MARIO and arrange them by run mode, collect them into groups of common TF_start
+# then take the nth percentile and return files either merged or unmerged for each tfself.
+# This will also include parsing the GEOS metadatafile from MARIOS and using it to reference.
+################################################################################################################
+print ("################################################################################################################")
+print ("Parsing ChIP")
+
+geos_df = snippets.parse_GEOS(GEOS_META)
+
+geos_df = geos_df[geos_df.Type != "viral_protein"]
+
+for i in CHIP_BED:
+	print (os.path.basename(i))
+
+MODES = ["MODE1", "MODE2", "MODE3", "MODE4"]
+
+#construct meta file that has the filename and path and also the TF name associated with itself.
+# Then I want to groupby the TF name and merge common methods into the same fileself.
+# I then want to compare the different modes based on the same thresh
