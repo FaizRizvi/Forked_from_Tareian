@@ -13,10 +13,13 @@ from itertools import groupby, chain
 import pandas as pd
 import seaborn as sns
 import pybedtools
+import math
+import numpy as np
+import scipy
 
 ##########################-----------ARGUMENT PARSER------------##############################
 #Set up the argument parser with all of the options and defaults set up.
-##############################################################################################
+################################################################################################################
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-v", "--verbosity", action="count", default=0, help='verbose (-vv, -vvv for more)')
@@ -65,9 +68,10 @@ DOMAIN_BED = args.domain_bed
 RE_BED = args.RE_bed
 CHIP_BED = args.CHIP_bed
 GEOS_META = args.GEOS_meta
-##########################-----------CHECKPOINT 1------------#################################
+
+####################################------------CHECKPOINT 1-----------------###################################
 # this If statement will determine whether MOODS needs to be run based on the input arguments.
-##############################################################################################
+################################################################################################################
 if args.MOODS == "T":
 	print ("Running MOODS")
 	###########################################------MOODS-------#############################################
@@ -371,7 +375,9 @@ else:
 #
 # Motif_ID		TF_Name
 # M00116_1.97d	TFAP2B
+
 print ("Parsing MOODS")
+
 # Manipulate the list to get the selected feature
 # Set the variable to the argument that was given for the file name
 # create a datasframe from the TF_Name list
@@ -401,39 +407,60 @@ TF_domain_RE_intersect_df =  snippets.bed_intersect(RE_BED, TF_domain_intersect,
 TF_domain_RE_intersect_df["RE_ID"] = TF_domain_RE_intersect_df[0] + "_" + TF_domain_RE_intersect_df[1].apply(str) + "_" + TF_domain_RE_intersect_df[2].apply(str)
 TF_domain_RE_intersect_df["SUB_ID"] = TF_domain_RE_intersect_df[0] + "_" + TF_domain_RE_intersect_df[18].apply(str) + "_" + TF_domain_RE_intersect_df[19].apply(str)
 
-TF_domain_RE_intersect_df.drop([1, 2, 5, 6, 7, 12, 13, 14, 16, 17, 18, 19, 20], axis=1, inplace=True)
+TF_domain_RE_intersect_df.drop([1, 2, 5, 12, 13, 14, 16, 17, 18, 19, 20], axis=1, inplace=True)
 
+TF_domain_RE_intersect_df = TF_domain_RE_intersect_df[[0, 6, 7, 8, 9, 10, 11, 15, "RE_ID", "SUB_ID", 3, 4]]
+
+TF_domain_RE_intersect_df.to_csv("TF_RE_SUB.bed", sep="\t", header = False, index=False)
+
+MOTIF_PATH = os.path.abspath("TF_RE_SUB.bed")
 ####################################------------CHECKPOINT 4-----------------###################################
 # The next step is to import the ChIP files from MARIO and arrange them by run mode, collect them into groups of common TF_start
 # then take the nth percentile and return files either merged or unmerged for each tfself.
 # This will also include parsing the GEOS metadatafile from MARIOS and using it to reference.
 ################################################################################################################
 print ("################################################################################################################")
-print ("Parsing ChIP")
+print ("Parsing GEOS META")
 
 geos_df = snippets.parse_GEOS(GEOS_META)
 
-geos_df = geos_df[geos_df.Type != "viral_protein"]
-print (geos_df)
+print ("Parsing ChIP files")
 
 CHIP_group_df = snippets.parse_CHIP(CHIP_BED, geos_df)
-print (CHIP_group_df)
 
-replicate_groups = CHIP_group_df["TF_Name"].unique()
+print ("Making ChIP folder")
 
-rep_group_counts = CHIP_group_df.groupby(["TF_Name", "MODE"]).count()
-rep_group_counts.drop([0], axis=1, inplace=True)
-rep_group_counts.reset_index(inplace=True)
+snippets.make_set_dir("chip")
 
-rep_group_replicates = rep_group_counts[rep_group_counts.Sample_Name != 1]
+print ("Parsing the 75th percentile")
 
-unique_TF_Rep = rep_group_replicates["TF_Name"].unique()
-print (unique_TF_Rep)
+snippets.percentile_parse(CHIP_group_df, 4)
 
-column_num = []
+print ("Making BED folder")
 
-for i in CHIP_group_df["file_path"]:
-	df = pd.read_csv(str(i), sep="\t", header=None)
-	column_num.append(len(df.columns))
+snippets.make_set_dir("merged")
 
-print (column_num)
+print ("Merging duplicate BEDS")
+
+snippets.merge_replicate_BEDS(CHIP_group_df, MOTIF_PATH)
+
+print ("Files merged by mode")
+
+####################################------------CHECKPOINT 5-----------------###################################
+# The next step is to take the merged BED files and then create a composite BED file to BIN based on MODE
+################################################################################################################
+print ("Binning Genome Based on MODES")
+print ("Building reference files")
+
+files_to_sort = snippets.build_reference_BEDS(CHIP_group_df, MOTIF_PATH)
+
+files_to_bin = snippets.sort_and_merge_reference(files_to_sort)
+
+snippets.bin_BED(files_to_bin)
+
+####################################------------CHECKPOINT 6-----------------###################################
+# The next step is to take the merged BED files and then create a composite BED file to BIN based on MODE
+################################################################################################################
+print ("Intersecting binned files with ChIP files and MOODS predictions")
+
+snippets.intersect_bin(MOTIF_PATH)
