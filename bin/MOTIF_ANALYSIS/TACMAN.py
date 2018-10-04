@@ -4,18 +4,20 @@ from __future__ import print_function
 import MOODS.scan
 import MOODS.tools
 import MOODS.parsers
-
 import snippets
 import os
 import sys
 import argparse
-from itertools import groupby, chain
 import pandas as pd
 import seaborn as sns
 import pybedtools
 import math
 import numpy as np
 import scipy
+import time
+from tqdm import tqdm
+
+from itertools import groupby, chain
 
 ##########################-----------ARGUMENT PARSER------------##############################
 #Set up the argument parser with all of the options and defaults set up.
@@ -61,7 +63,7 @@ option_group.add_argument('--lo-bg', metavar=('pA', 'pC', 'pG', 'pT'), nargs=4, 
 #set the arguments from the command line to variables in the args object
 args = parser.parse_args()
 
-#set variables
+#set variables from arguments
 MOTIF_HITS = args.output_file
 TF_NAME_FILE = args.tf_name_file
 DOMAIN_BED = args.domain_bed
@@ -70,305 +72,6 @@ CHIP_BED = args.CHIP_bed
 GEOS_META = args.GEOS_meta
 
 ####################################------------CHECKPOINT 1-----------------###################################
-# this If statement will determine whether MOODS needs to be run based on the input arguments.
-################################################################################################################
-if args.MOODS == "T":
-	print ("Running MOODS")
-	###########################################------MOODS-------#############################################
-	###### This was lifted from the dna_MOODS.py file that came with MOODS 1.9.3. All I did was copy and paste
-	###### and integrate into my pipeline.
-	##########################################################################################################
-
-	# sanity check for parameters, apply effects
-
-	if len(args.matrix_files) == 0 and len(args.lo_matrix_files) == 0:
-		print("{}: error: no matrix files given (use -h for help)".format(os.path.basename(__file__)), file=sys.stderr)
-		sys.exit(1)
-	if len(args.sequence_files) == 0:
-		print("{}: error: no sequence files given (use -h for help)".format(os.path.basename(__file__)), file=sys.stderr)
-		sys.exit(1)
-	if (args.p_val is None) and (args.t is None) and (args.max_hits is None):
-		print("{}: error: no threshold given (use -h for help)".format(os.path.basename(__file__)), file=sys.stderr)
-		sys.exit(1)
-	if (args.p_val is not None and args.t is not None) or (args.t is not None and args.max_hits is not None) or (args.p_val is not None and args.max_hits is not None):
-		print("{}: error: only one threshold specification allowed (use -h for help)".format(os.path.basename(__file__)), file=sys.stderr)
-		sys.exit(1)
-	if args.max_hits is not None and args.batch:
-		print("{}: warning: ignoring --batch when used with -B".format(os.path.basename(__file__)), file=sys.stderr)
-	if args.t is not None and args.batch:
-		print("{}: warning: --batch is redundant when used with -t".format(os.path.basename(__file__)), file=sys.stderr)
-
-
-	if args.log_base is not None and (args.log_base <= 1):
-			print("{}: error: --log-base has to be > 1".format(os.path.basename(__file__)), file=sys.stderr)
-			sys.exit(1)
-
-	# redirect output
-	output_target = sys.stdout
-	if args.output_file is not None:
-		try:
-			outfile = open(args.output_file, 'w')
-		except:
-			print("{}: error: could not open output file {} for writing".format(os.path.basename(__file__), args.output_file), file=sys.stderr)
-			sys.exit(1)
-		output_target = outfile
-
-
-	# --- Helper functions for IO ---
-
-	def pfm_to_log_odds(filename):
-		if args.log_base is not None:
-			mat = MOODS.parsers.pfm_to_log_odds(filename, args.lo_bg, args.ps, args.log_base)
-		else:
-			mat = MOODS.parsers.pfm_to_log_odds(filename, args.lo_bg, args.ps)
-		if len(mat) != 4:
-			return False, mat
-		else:
-			return True, mat
-
-	def adm_to_log_odds(filename):
-		if args.log_base is not None:
-			mat = MOODS.parsers.adm_to_log_odds(filename, args.lo_bg, args.ps, 4, args.log_base)
-		else:
-			mat = MOODS.parsers.adm_to_log_odds(filename, args.lo_bg, args.ps, 4)
-		if len(mat) != 16:
-			return False, mat
-		else:
-			return True, mat
-
-	def pfm(filename):
-		mat = MOODS.parsers.pfm(filename)
-		if len(mat) != 4:
-			return False, mat
-		else:
-			return True, mat
-
-	def adm(filename):
-		mat = MOODS.parsers.adm_1o_terms(filename, 4)
-		if len(mat) != 16:
-			return False, mat
-		else:
-			return True, mat
-
-	def read_text_or_fasta(filename):
-		with open(filename, "r") as f:
-			line = ""
-			while len(line) == 0:
-				line = f.next().strip()
-		if line[0] == '>':
-			return iter_fasta(filename)
-		else:
-			return iter_text(filename)
-
-	def iter_text(filename):
-		with open(filename, "r") as f:
-			seq = "".join([line.strip() for line in f])
-		yield os.path.basename(filename), seq
-
-
-	def iter_fasta(filename):
-		with open(filename, "r") as f:
-			iterator = groupby(f, lambda line: line[0] == ">")
-			for is_header, group in iterator:
-				if is_header:
-					header = group.next()[1:].strip()
-				else:
-					yield header, "".join(s.strip() for s in group)
-
-	# format hit sequence with variants applied
-	# only for for snps right now
-	def modified_seq(seq, start, end, applied_variants, variants):
-		ret = list(seq[start:end].lower())
-		for i in applied_variants:
-			# print(ret)
-			# print(variants[i].start_pos - start)
-			ret[variants[i].start_pos - start] = (variants[i].modified_seq).upper()
-		return "".join(ret)
-
-
-	# print results
-	def print_results(header, seq, matrices, matrix_names, results, results_snps=[], variants=[]):
-		if args.no_rc:
-			fr = results
-			frs = results_snps
-			rr = [[] for m in matrices]
-			rrs = [[] for m in matrices]
-		else:
-			fr = results[:len(matrix_names)]
-			frs = results_snps[:len(matrix_names)]
-			rr = results[len(matrix_names):]
-			rrs = results_snps[len(matrix_names):]
-
-		# mix the results together, use + and - to indicate strand
-		results = [ [(r.pos, r.score, '+', ()) for r in fr[i]] + [(r.pos, r.score, '-', ()) for r in rr[i]] + [(r.pos, r.score, '+', r.variants) for r in frs[i]] + [(r.pos, r.score, '-', r.variants) for r in rrs[i]] for i in xrange(len(matrix_names))]
-		for (matrix, matrix_name,result) in zip(matrices, matrix_names, results):
-			if args.verbosity >= 2:
-				print("{}: {}: {} matches for {}".format(os.path.basename(__file__), header, len(result), matrix_name), file=sys.stderr)
-			if len(matrix) == 4:
-				l = len(matrix[0])
-			if len(matrix) == 16:
-				l = len(matrix[0]) + 1
-			for r in sorted(result, key=lambda r: r[0]):
-				strand = r[2]
-				pos = r[0]
-				hitseq = seq[pos:pos+l]
-				if len(r[3]) >= 1:
-					hitseq_actual = modified_seq(seq, pos, pos+l, r[3], variants)
-				else:
-					hitseq_actual = ""
-				print(args.sep.join([header,matrix_name, str(pos), strand, str(r[1]), hitseq, hitseq_actual]), file=output_target)
-
-	# --- Load matrices ---
-	if args.verbosity >= 1:
-		print("{}: reading matrices ({} matrix files)".format(os.path.basename(__file__), len(args.matrix_files)+len(args.lo_matrix_files)), file=sys.stderr)
-
-	matrix_names = map(os.path.basename, [n for n in args.matrix_files + args.lo_matrix_files])
-	matrices = []
-	matrices_rc = []
-	for filename in args.matrix_files:
-		valid = False
-		if filename[-4:] != '.adm': # let's see if it's pfm
-			valid, matrix = pfm_to_log_odds(filename)
-			if valid and args.verbosity >= 3:
-				print("{}: read matrix file {} as pfm (converted to PWM)".format(os.path.basename(__file__), filename), file=sys.stderr)
-		if not valid: # well maybe it is adm
-			valid, matrix = adm_to_log_odds(filename)
-			if valid and args.verbosity >= 3:
-				print("{}: read matrix file {} as adm (converted to high-order PWM)".format(os.path.basename(__file__), filename), file=sys.stderr)
-		if not valid:
-			print("{}: error: could not parse matrix file {}".format(os.path.basename(__file__), filename), file=sys.stderr)
-			sys.exit(1)
-		else:
-			matrices.append(matrix)
-			matrices_rc.append(MOODS.tools.reverse_complement(matrix,4))
-	for filename in args.lo_matrix_files:
-		valid = False
-		if filename[-4:] != '.adm': # let's see if it's pfm
-			valid, matrix = pfm(filename)
-			if valid and args.verbosity >= 3:
-				print("{}: read matrix file {} as pfm".format(os.path.basename(__file__), filename), file=sys.stderr)
-		if not valid: # well maybe it is adm
-			valid, matrix = adm(filename)
-			if valid and args.verbosity >= 3:
-				print("{}: read matrix file {} as adm".format(os.path.basename(__file__), filename), file=sys.stderr)
-		if not valid:
-			print("{}: error: could not parse matrix file {}".format(os.path.basename(__file__), filename), file=sys.stderr)
-			sys.exit(1)
-		else:
-			matrices.append(matrix)
-			matrices_rc.append(MOODS.tools.reverse_complement(matrix,4))
-
-	if args.no_rc:
-		matrices_all = matrices
-	else:
-		matrices_all = matrices + matrices_rc
-
-	# --- Scanning ---
-	if args.p_val is not None or args.t is not None:
-		scanner = None
-		# build scanner if using fixed threshold
-		if args.t is not None:
-			thresholds = [args.t for m in matrices_all]
-			scanner = MOODS.scan.Scanner(7)
-			bg = args.bg # used for search optimisation only
-			scanner.set_motifs(matrices_all, bg, thresholds)
-		# build scanner if using p-value and --batch
-		if args.p_val is not None and args.batch:
-			bg = args.bg
-			if args.verbosity >= 1:
-				print("{}: computing thresholds from p-value".format(os.path.basename(__file__)), file=sys.stderr)
-			thresholds = [MOODS.tools.threshold_from_p(m,bg,args.p_val,4) for m in matrices_all]
-			if args.verbosity >= 3:
-				for (m, t) in zip(matrix_names, thresholds):
-					print("{}: threshold for {} is {}".format(os.path.basename(__file__), m, t), file=sys.stderr)
-			if args.verbosity >= 1:
-				print("{}: preprocessing matrices for scanning".format(os.path.basename(__file__)), file=sys.stderr)
-			scanner = MOODS.scan.Scanner(7)
-			bg = args.bg
-			scanner.set_motifs(matrices_all, bg, thresholds)
-
-		for seq_file in args.sequence_files:
-			if args.verbosity >= 1:
-				print("{}: reading sequence file {}".format(os.path.basename(__file__), seq_file), file=sys.stderr)
-			try:
-				seq_iterator = read_text_or_fasta(seq_file)
-			except Exception:
-				print("{}: error: could not parse sequence file {}".format(os.path.basename(__file__), seq_file), file=sys.stderr)
-				sys.exit(1)
-
-			for header, seq in seq_iterator:
-				# preprocessing for the new sequence if using p-values and not --batch
-				if args.p_val is not None and not args.batch:
-					bg = MOODS.tools.bg_from_sequence_dna(seq,1)
-					if args.verbosity >= 3:
-						print("{}: estimated background for {} is {}".format(os.path.basename(__file__), header, bg), file=sys.stderr)
-					if args.verbosity >= 1:
-						print("{}: computing thresholds from p-value for sequence {}".format(os.path.basename(__file__), header), file=sys.stderr)
-					thresholds = [MOODS.tools.threshold_from_p(m,bg,args.p_val,4) for m in matrices_all]
-					if args.verbosity >= 3:
-						for (m, t) in zip(matrix_names, thresholds):
-							print("{}: threshold for {} is {}".format(os.path.basename(__file__), m, t), file=sys.stderr)
-					if args.verbosity >= 1:
-						print("{}: preprocessing matrices for scanning".format(os.path.basename(__file__)), file=sys.stderr)
-					scanner = MOODS.scan.Scanner(7)
-					scanner.set_motifs(matrices_all, bg, thresholds)
-
-				if args.verbosity >= 1:
-					print("{}: scanning sequence {}".format(os.path.basename(__file__), header), file=sys.stderr)
-				results = scanner.scan(seq)
-				if args.no_snps:
-					results_snps = [[]]*len(matrices_all)
-					snps = []
-				else:
-					snps = MOODS.tools.snp_variants(seq)
-					if args.verbosity >= 2:
-						 print("{}: {} variants for sequence {}".format(os.path.basename(__file__), len(snps), header), file=sys.stderr)
-					results_snps = scanner.variant_matches(seq,snps)
-				print_results(header, seq, matrices, matrix_names, results, results_snps, snps)
-
-	# --- Scanning (max hits version) ---
-	elif args.max_hits is not None:
-		if args.no_rc:
-			N = args.max_hits
-		else:
-			# this is a bit tricky
-			N = (args.max_hits * 2)/3
-		for seq_file in args.sequence_files:
-			if args.verbosity >= 1:
-				print("{}: reading sequence file {}".format(os.path.basename(__file__), seq_file), file=sys.stderr)
-			try:
-				seq_iterator = read_text_or_fasta(seq_file)
-			except Exception:
-				print("{}: error: could not parse sequence file {}".format(os.path.basename(__file__), seq_file), file=sys.stderr)
-				sys.exit(1)
-
-			for header, seq in seq_iterator:
-				if args.verbosity >= 1:
-					print("{}: scanning sequence {}".format(os.path.basename(__file__), header), file=sys.stderr)
-				results = MOODS.scan.scan_best_hits_dna(seq, matrices_all, N)
-				if args.no_snps:
-					results_snps = [[]]*len(matrices_all)
-					snps = []
-				else:
-					snps = MOODS.tools.snp_variants(seq)
-					if args.verbosity >= 2:
-						 print("{}: {} variants for sequence {}".format(os.path.basename(__file__), len(snps), header), file=sys.stderr)
-					snp_thresholds = [min((r.score for r in rs)) for rs in results]
-					if not args.no_rc:
-						snp_thresholds = 2 * map(min, zip(snp_thresholds[:len(matrix_names)], snp_thresholds[len(matrix_names):]))
-					scanner = MOODS.scan.Scanner(7)
-					bg = MOODS.tools.bg_from_sequence_dna(seq,1)
-					scanner.set_motifs(matrices_all, bg, snp_thresholds)
-					results_snps = scanner.variant_matches(seq,snps)
-				print_results(header, seq, matrices, matrix_names, results, results_snps, snps)
-
-	if args.output_file:
-		outfile.close()
-
-else:
-		print ("Not in the MOODs...")
-
-####################################------------CHECKPOINT 2-----------------###################################
 # From here on the script will process the motif file that was produced from MOODS or provided as the -o option.
 ################################################################################################################
 # The TF file must look something ilke the following with a header column that matches the following column IDs.
@@ -376,10 +79,9 @@ else:
 # Motif_ID		TF_Name
 # M00116_1.97d	TFAP2B
 
-print ("Parsing MOODS")
+print ("TACMAN: Parsing MOODS")
 
 # Manipulate the list to get the selected feature
-# Set the variable to the argument that was given for the file name
 # create a datasframe from the TF_Name list
 TF_df = pd.read_csv(TF_NAME_FILE, sep="\t", header=0)
 
@@ -389,7 +91,8 @@ dicted = snippets.dict_TF_df(TF_df)
 a = snippets.parse_moods(MOTIF_HITS, dicted)
 
 MOTIF_HITS_BED = MOTIF_HITS.replace(".txt", ".bed")
-
+fish.animate()
+bird.animate()
 a.sort_values(by=['chr', "TF_start", "TF_end"], inplace=True)
 
 a.to_csv(MOTIF_HITS_BED, sep="\t", index=False, header=False)
@@ -397,21 +100,21 @@ a.to_csv(MOTIF_HITS_BED, sep="\t", index=False, header=False)
 ####################################------------CHECKPOINT 3-----------------###################################
 # From here the parsed Moods file will be in a BED format and will be intersected with the RE lists of interest and also the domains.
 ################################################################################################################
-print ("Finding Intersections")
+print ("TACMAN: Finding Intersections")
 print ("################################################################################################################")
 
-TF_domain_intersect = snippets.bed_intersect(MOTIF_HITS_BED, DOMAIN_BED, False)
+#TF_domain_intersect = snippets.bed_intersect(MOTIF_HITS_BED, DOMAIN_BED, False)
 
-TF_domain_RE_intersect_df =  snippets.bed_intersect(RE_BED, TF_domain_intersect, True)
+#TF_domain_RE_intersect_df =  snippets.bed_intersect(RE_BED, TF_domain_intersect, True)
 
-TF_domain_RE_intersect_df["RE_ID"] = TF_domain_RE_intersect_df[0] + "_" + TF_domain_RE_intersect_df[1].apply(str) + "_" + TF_domain_RE_intersect_df[2].apply(str)
-TF_domain_RE_intersect_df["SUB_ID"] = TF_domain_RE_intersect_df[0] + "_" + TF_domain_RE_intersect_df[18].apply(str) + "_" + TF_domain_RE_intersect_df[19].apply(str)
+#TF_domain_RE_intersect_df["RE_ID"] = TF_domain_RE_intersect_df[0] + "_" + TF_domain_RE_intersect_df[1].apply(str) + "_" + TF_domain_RE_intersect_df[2].apply(str)
+#TF_domain_RE_intersect_df["SUB_ID"] = TF_domain_RE_intersect_df[0] + "_" + TF_domain_RE_intersect_df[18].apply(str) + "_" + TF_domain_RE_intersect_df[19].apply(str)
 
-TF_domain_RE_intersect_df.drop([1, 2, 5, 12, 13, 14, 16, 17, 18, 19, 20], axis=1, inplace=True)
+#TF_domain_RE_intersect_df.drop([1, 2, 5, 12, 13, 14, 16, 17, 18, 19, 20], axis=1, inplace=True)
 
-TF_domain_RE_intersect_df = TF_domain_RE_intersect_df[[0, 6, 7, 8, 9, 10, 11, 15, "RE_ID", "SUB_ID", 3, 4]]
+#TF_domain_RE_intersect_df = TF_domain_RE_intersect_df[[0, 6, 7, 8, 9, 10, 11, 15, "RE_ID", "SUB_ID", 3, 4]]
 
-TF_domain_RE_intersect_df.to_csv("TF_RE_SUB.bed", sep="\t", header = False, index=False)
+#TF_domain_RE_intersect_df.to_csv("TF_RE_SUB.bed", sep="\t", header = False, index=False)
 
 MOTIF_PATH = os.path.abspath("TF_RE_SUB.bed")
 ####################################------------CHECKPOINT 4-----------------###################################
@@ -420,47 +123,51 @@ MOTIF_PATH = os.path.abspath("TF_RE_SUB.bed")
 # This will also include parsing the GEOS metadatafile from MARIOS and using it to reference.
 ################################################################################################################
 print ("################################################################################################################")
-print ("Parsing GEOS META")
+print ("TACMAN: Parsing GEOS META")
 
 geos_df = snippets.parse_GEOS(GEOS_META)
 
-print ("Parsing ChIP files")
+print ("TACMAN: Parsing ChIP files")
 
 CHIP_group_df = snippets.parse_CHIP(CHIP_BED, geos_df)
 
-print ("Making ChIP folder")
+print ("TACMAN: Making ChIP folder")
 
 snippets.make_set_dir("chip")
 
-print ("Parsing the 75th percentile")
+print ("TACMAN: Parsing the 75th percentile")
 
-snippets.percentile_parse(CHIP_group_df, 4)
+#snippets.percentile_parse(CHIP_group_df, 4)
 
-print ("Making BED folder")
+print ("TACMAN: Making BED folder")
 
 snippets.make_set_dir("merged")
 
-print ("Merging duplicate BEDS")
+print ("TACMAN: Merging duplicate BEDS")
 
-snippets.merge_replicate_BEDS(CHIP_group_df, MOTIF_PATH)
+#snippets.merge_replicate_BEDS(CHIP_group_df, MOTIF_PATH)
 
-print ("Files merged by mode")
+print ("TACMAN: Files merged by mode")
 
 ####################################------------CHECKPOINT 5-----------------###################################
 # The next step is to take the merged BED files and then create a composite BED file to BIN based on MODE
 ################################################################################################################
-print ("Binning Genome Based on MODES")
-print ("Building reference files")
+print ("TACMAN: Binning Genome Based on MODES")
+print ("TACMAN: Building reference files")
 
-files_to_sort = snippets.build_reference_BEDS(CHIP_group_df, MOTIF_PATH)
+MODES = ["MODE1", "MODE2", "MODE3", "MODE4"]
+MODES = pd.DataFrame(MODES)
 
-files_to_bin = snippets.sort_and_merge_reference(files_to_sort)
+files_list = []
 
-snippets.bin_BED(files_to_bin)
+#In this line of code you will break down the different MODES into sets that will be binned. The next step is sorting.
+MODES[0].apply(snippets.bin_group_collect, args = (CHIP_group_df, MOTIF_PATH, files_list))
+
+snippets.bin_groups_write_files(files_list)
 
 ####################################------------CHECKPOINT 6-----------------###################################
 # The next step is to take the merged BED files and then create a composite BED file to BIN based on MODE
 ################################################################################################################
-print ("Intersecting binned files with ChIP files and MOODS predictions")
+print ("TACMAN: Intersecting binned files with ChIP files and MOODS predictions")
 
 snippets.intersect_bin(MOTIF_PATH)
