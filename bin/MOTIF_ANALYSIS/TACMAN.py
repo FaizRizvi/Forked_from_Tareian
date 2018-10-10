@@ -111,10 +111,10 @@ for j in MOODS_BED_LIST:
 # This will also include parsing the GEOS metadatafile from MARIOS and using it to reference.
 ################################################################################################################
 print(checkpoint)
-print (stylize("TACMAN: Parsing GEOS META", tacman_color))
+print (stylize("TACMAN: Parsing MARIO Data", tacman_color))
 print(checkpoint)
 
-CHIP_df = snippets.parse_CHIP(GEOS_META, CHIP_BED)
+CHIP_df = snippets.parse_MARIO(GEOS_META, CHIP_BED)
 
 print(checkpoint)
 print (stylize("TACMAN: Making ChIP folder", tacman_color))
@@ -123,10 +123,10 @@ print(checkpoint)
 snippets.make_set_dir("chip")
 
 print(checkpoint)
-print (stylize("TACMAN: Parsing the 75th percentile", tacman_color))
+print (stylize("TACMAN: Parsing out the 75th percentile", tacman_color))
 print(checkpoint)
 
-snippets.percentile_parse(CHIP_df, 4)
+CHIP_df["file_path"].apply(snippets.parse_percentile)
 
 print(checkpoint)
 print (stylize("TACMAN: Making BED folder", tacman_color))
@@ -135,13 +135,10 @@ print(checkpoint)
 snippets.make_set_dir("merged")
 
 print(checkpoint)
-print (stylize("TACMAN: Merging replicate BEDS", tacman_color))
+print (stylize("TACMAN: Merging replicate TF BEDS", tacman_color))
 print(checkpoint)
 
-snippets.merge_replicate_BEDS(CHIP_df, MOTIF_PATH)
-
-print(checkpoint)
-print (stylize("TACMAN: Files merged by mode", tacman_color))
+snippets.parse_replicate_BEDS(CHIP_df, MOTIF_PATH)
 
 ####################################------------CHECKPOINT 5-----------------###################################
 # The next step is to take the merged BED files and then create a composite BED file to BIN based on MODE

@@ -1,6 +1,6 @@
-import MOODS.scan
-import MOODS.tools
-import MOODS.parsers
+#!/usr/bin/env python
+from __future__ import print_function
+
 import os
 import sys
 import argparse
@@ -11,8 +11,6 @@ import math
 import numpy as np
 import scipy
 import glob
-import time
-from tqdm import tqdm
 import colored
 from itertools import groupby, chain
 from colored import stylize
@@ -25,12 +23,12 @@ MODES = pd.DataFrame(MODES)
 moods_color = colored.fg(35) + colored.attr(1)
 BED_INTERSECT_color = colored.fg(141) + colored.attr(1)
 DOMAIN_PARSE_color = colored.fg(202) + colored.attr(1)
-MARIO_PARSE_color = colored.fg(13) + colored.attr(1)
-CHIP_PARSE_color = colored.fg(14) + colored.attr(1)
-MAKE_DIR_color = colored.fg(12) + colored.attr(1)
+MARIO_PARSE_color = colored.fg(14) + colored.attr(1)
+MAKE_DIR_color = colored.fg(201) + colored.attr(1)
 MERGE_BED_color = colored.fg(196) + colored.attr(1)
+PARSE_PERCENTILE_color = colored.fg(15) + colored.attr(1)
 
-def a_bin_parse(x):
+def bin_parse(x):
     BIN_FILE = []
     peaks = x["ID"]
     bins = x['bins']
@@ -185,74 +183,16 @@ def make_set_dir(x):
     print (stylize("Making Directory: Changing working directory to: " + dir, MAKE_DIR_color))
     os.chdir(dir)
 
-def merge_replicate_BEDS(x, y):
-    TF_DF = x["TF_Name"].unique()
-
-    rep_group_counts = x.groupby(["TF_Name", "MODE"]).count()
-    rep_group_counts.drop([0], axis=1, inplace=True)
-    rep_group_counts.reset_index(inplace=True)
-
-    rep_group_replicates = rep_group_counts[rep_group_counts.Sample_Name > 1]
-    rep_group_singles = rep_group_counts[rep_group_counts.Sample_Name == 1]
-    rep_group_all = rep_group_counts[rep_group_counts.Sample_Name >= 1]
-
-    unique_TF_Rep = rep_group_replicates["TF_Name"].unique()
-    unique_TF_single = rep_group_singles["TF_Name"].unique()
-    unique_TF_all = rep_group_all["TF_Name"].unique()
-
-    for i in unique_TF_Rep:
-        tf_df = x[x.TF_Name == i]
-        print (stylize("Merge BEDS: Extracting domain ID for " + i, MERGE_BED_color))
-
-        print (stylize("Merge BEDS: Merging " + i, MERGE_BED_color))
-
-        for j in MODES[0]:
-            mode_df = tf_df[tf_df.MODE == j]
-
-            mode_paths = mode_df["file_path"]
-
-            tf_filename = i + "_" + str(j) + ".bed"
-
-            with open(tf_filename, 'w') as outfile:
-                for fname in mode_paths:
-                    with open(fname) as infile:
-                        outfile.write(infile.read())
-
-            df_sort = pd.read_csv(tf_filename, sep="\t", header=None, usecols=[0,1,2,3])
-            df_sort = df_sort[[0,1,2,3]]
-            df_sort.sort_values(by=[0, 1, 2], inplace=True)
-
-            df_sort.to_csv(tf_filename, sep="\t", index=False, header=False)
-
-            a = pybedtools.BedTool(tf_filename)
-            c = a.merge()
-            d = c.moveto(tf_filename)
-
-    for k in unique_TF_single:
-        tf_df = x[x.TF_Name == k]
-        print (stylize("Merge BEDS: Parsing TF single file " + k, MERGE_BED_color))
-
-        for l in MODES[0]:
-            mode_df = tf_df[tf_df.MODE == l]
-
-            mode_paths = mode_df["file_path"]
-
-            tf_filename = k + "_" + l + ".bed"
-            with open(tf_filename, 'w') as outfile:
-                for fname in mode_paths:
-                    with open(fname) as infile:
-                        outfile.write(infile.read())
-
-def parse_CHIP(x, y):
-    print (stylize("MARIO Parsing: Reading in GEOS Meta File", CHIP_PARSE_color))
+def parse_MARIO(x, y):
+    print (stylize("MARIO Parsing: Reading in GEOS Meta File", MARIO_PARSE_color))
     df = pd.read_csv(x, sep="\t", header=None, usecols=[1, 13], names=["Sample_Name", "info"])
     CHIP_df = pd.DataFrame.from_dict(y)
 
-    print (stylize("MARIO Parsing: Splitting strings", CHIP_PARSE_color))
+    print (stylize("MARIO Parsing: Splitting strings", MARIO_PARSE_color))
     df["TF"] = df["info"].str.split(":").str[3]
     df["Type"] = df["info"].str.split(":").str[1]
 
-    print (stylize("MARIO Parsing: Dropping non-TF ChIP Files", CHIP_PARSE_color))
+    print (stylize("MARIO Parsing: Dropping non-TF ChIP Files", MARIO_PARSE_color))
 
     histone_mod_list = [  "H3K9me3", "H3K79me2"]
 
@@ -267,17 +207,17 @@ def parse_CHIP(x, y):
     df = df[df.TF != "H3K9me3"]
     df = df[df.TF != "H3K79me2"]
 
-    print (stylize("MARIO Parsing: Creating DF ChIP name associations based on GEOS Meta File", CHIP_PARSE_color))
+    print (stylize("MARIO Parsing: Creating DF ChIP name associations based on GEOS Meta File", MARIO_PARSE_color))
     CHIP_df["Basename"] = CHIP_df[0].apply(os.path.basename)
     CHIP_df["File_ext"] = CHIP_df.Basename.str.split("_").str[-1]
     CHIP_df["MODE"] = CHIP_df.File_ext.str.split(".").str[0]
     CHIP_df["Sample_Name"] = CHIP_df.Basename.str.split("_").str[0]
 
-    print (stylize("MARIO Parsing: Droping unused columns", CHIP_PARSE_color))
+    print (stylize("MARIO Parsing: Droping unused columns", MARIO_PARSE_color))
     CHIP_df.drop("File_ext", axis=1, inplace=True)
     CHIP_df.drop("Basename", axis=1, inplace=True)
 
-    print (stylize("MARIO Parsing: Mapping Names", CHIP_PARSE_color))
+    print (stylize("MARIO Parsing: Mapping Names", MARIO_PARSE_color))
     dicted = dict(zip(df.Sample_Name, df.TF))
 
     CHIP_df["TF_Name"] = CHIP_df["Sample_Name"].map(dicted)
@@ -374,30 +314,75 @@ def parse_moods(x, TF_NAME_FILE, ofd):
 
     return MOODS_HITS_BED
 
-def percentile_parse(x, y):
-    for i in x["file_path"]:
-        df = pd.read_csv(str(i), sep="\t", header=None)
-        col_num = len(df.columns)
-        base = os.path.basename(i)
+def parse_percentile(x, y):
+    base = os.path.basename(x)
+    print (stylize("Parse 75th percentile from: " + str(base), PARSE_PERCENTILE_color))
 
-        if col_num == 11:
-            per_len = (len(df[7]))/y
+    df = pd.read_csv(str(x), sep="\t", header=None)
+    col_num = len(df.columns)
 
-            top_sorted = df[7].sort_values(ascending=False).head(per_len)
+    if col_num == 11:
+        per_len = (len(df[7]))/4
 
-            df.sort_values(by=[7], ascending=False, inplace=True)
+        df.sort_values(by=[7], ascending=False, inplace=True)
+        df = df.head(per_len)
 
-            df = df.head(per_len)
+        df.to_csv(str(base))
 
-            df.to_csv(str(base))
+    elif col_num == 13:
+        per_len = (len(df[12]))/4
 
-        elif col_num == 13:
-            per_len = (len(df[12]))/4
+        df.sort_values(by=[12], ascending=False, inplace=True)
+        df = df.head(per_len)
 
-            top_sorted = df[12].sort_values(ascending=False).head(per_len)
+        df.to_csv(str(base))
 
-            df.sort_values(by=[12], ascending=False, inplace=True)
+def parse_replicate_BEDS(x, y):
+    def parse_replicates(i):
+        tf_df = x[x.TF_Name == i]
+        print (stylize("Merge BEDS: Merging " + i, MERGE_BED_color))
 
-            df = df.head(per_len)
+        for j in MODES[0]:
+            mode_df = tf_df[tf_df.MODE == j]
 
-            df.to_csv(str(base))
+            tf_filename = i + "_" + str(j) + ".bed"
+            with open(tf_filename, 'w') as outfile:
+                for fname in mode_df["file_path"]:
+                    with open(fname) as infile:
+                        outfile.write(infile.read())
+
+            df_sort = pd.read_csv(tf_filename, sep="\t", header=None, usecols=[0,1,2,3])
+            df_sort.sort_values(by=[0, 1, 2], inplace=True)
+            df_sort.to_csv(tf_filename, sep="\t", index=False, header=False)
+
+            a = pybedtools.BedTool(tf_filename)
+            c = a.merge()
+            d = c.moveto(tf_filename)
+
+    def parse_single(k):
+        tf_df = x[x.TF_Name == k]
+        print (stylize("Merge BEDS: Parsing TF single file " + k, MERGE_BED_color))
+
+        for l in MODES[0]:
+            mode_df = tf_df[tf_df.MODE == l]
+
+            tf_filename = k + "_" + l + ".bed"
+            with open(tf_filename, 'w') as outfile:
+                for fname in mode_df["file_path"]:
+                    with open(fname) as infile:
+                        outfile.write(infile.read())
+
+    print (stylize("Merge BEDS: Creating reference frames", MERGE_BED_color))
+    df = x
+    TF_file_counts = x.groupby(["TF_Name", "MODE"]).count()
+    TF_file_counts.drop([0], axis=1, inplace=True)
+    TF_file_counts.reset_index(inplace=True)
+
+    TF_replicates = TF_file_counts[TF_file_counts.Sample_Name > 1].unique()
+    TF_singles = TF_file_counts[TF_file_counts.Sample_Name == 1].unique()
+
+    print (TF_replicates)
+    print (TF_singles)
+
+    TF_replicates["TF_Name"].apply(parse_replicates)
+    TF_singles["TF_Name"].apply(parse_single)
