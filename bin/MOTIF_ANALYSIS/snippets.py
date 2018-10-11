@@ -338,6 +338,25 @@ def parse_percentile(x, y):
         df.to_csv(str(base))
 
 def parse_replicate_BEDS(x, y):
+    def parse_percentile(p):
+        print (stylize("Parse 75th percentile from: " + str(base), PARSE_PERCENTILE_color))
+        df = pd.read_csv(str(p), sep="\t", header=None)
+        col_num = len(df.columns)
+
+        if col_num == 11:
+            per_len = (len(df[7]))/4
+            df.sort_values(by=[7], ascending=False, inplace=True)
+            df = df.head(per_len)
+
+            return df
+
+        elif col_num == 13:
+            per_len = (len(df[12]))/4
+            df.sort_values(by=[12], ascending=False, inplace=True)
+            df = df.head(per_len)
+
+            return df
+
     def parse_replicates(i):
         tf_df = x[x.TF_Name == i]
         print (stylize("Merge BEDS: Merging " + i, MERGE_BED_color))
@@ -372,8 +391,9 @@ def parse_replicate_BEDS(x, y):
                     with open(fname) as infile:
                         outfile.write(infile.read())
 
+    base = os.path.basename(p)
+
     print (stylize("Merge BEDS: Creating reference frames", MERGE_BED_color))
-    df = x
     TF_file_counts = x.groupby(["TF_Name", "MODE"]).count()
     TF_file_counts.drop([0], axis=1, inplace=True)
     TF_file_counts.reset_index(inplace=True)
