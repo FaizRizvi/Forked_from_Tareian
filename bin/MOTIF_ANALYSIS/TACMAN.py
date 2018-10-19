@@ -17,7 +17,7 @@ import shutil
 # Set up the argument parser with all of the options and defaults set up.
 parser = argparse.ArgumentParser()
 
-parser.add_argument("-b", "--BED",  help="Input DHS Bed file", default = [], required=True)
+parser.add_argument("-b", "--BED", dest='DHS_BED', help="Input DHS Bed file", default = [], required=True)
 parser.add_argument('-T','--tf', action='store', dest='tf_name_file', help='A tab-delimited file that has TF Name and Motif Name)', required=True)
 parser.add_argument("-d", "--domain_bed", dest='domain_bed', help="BED file containing domain calls", required=True)
 parser.add_argument("-c", "--CHIP", nargs='+', action='store', dest='CHIP_bed', help='ChIP BED files', default = [], required=True)
@@ -29,6 +29,7 @@ args = parser.parse_args()
 
 # set variables from arguments
 MOODS_HITS = args.moods_hits
+DHS_BED = args.DHS_BED
 TF_NAME_FILE = args.tf_name_file
 DOMAIN_BED = args.domain_bed
 CHIP_BED = args.CHIP_bed
@@ -90,33 +91,25 @@ os.chdir(ofd)
 
 print(checkpoint)
 print (stylize("TACMAN: Parsing MARIO Data", tacman_color))
-print(checkpoint)
 
 META = snippets.META(META, CHIP_BED)
 META.META_parse()
-print(checkpoint)
 
 chip_dir = snippets.make_set_dir("chip", True)
-
-print(checkpoint)
 
 for i in percentiles:
     percentile = (100 - (100 / i))
     per_wd = snippets.make_set_dir("percentile_" + str(percentile), True)
 
-    print(checkpoint)
     obj = snippets.MARIO(CHIP_BED, i)
 
     obj.parse_singles_percentile(META.unique_tf_single_df, i)
-    print(checkpoint)
 
     unmerg_dir = snippets.make_set_dir("unmerged", True)
 
     obj.parse_replicate_percentile(META.unique_tf_rep_df, i)
-    print(checkpoint)
 
     obj.merge_replicate_BEDS(META.unique_tf_rep_df, per_wd, META.unique_MODES, META.unique_TF_reps_names)
-    print(checkpoint)
 
     shutil.rmtree(unmerg_dir)
 
@@ -125,19 +118,21 @@ for i in percentiles:
 ####################################------------CHECKPOINT 3-----------------###################################
 # The next step is to take the merged BED files and then create a composite BED file to BIN based on MODE
 
-print (stylize("TACMAN: Binning genome based on MODE", tacman_color))
 print(checkpoint)
-
 print (stylize("TACMAN: Building reference files", tacman_color))
 
-MODES = ["MODE1", "MODE2", "MODE3", "MODE4"]
-MODES = pd.DataFrame(MODES)
+os.chdir(ofd)
 
-META.unique_MODES= kill
+bin_dir = snippets.make_set_dir("BINS", True)
 
-#In this line of code you will break down the different MODES into sets that will be binned. The next step is sorting.
-MODES[0].apply(snippets.bin_group_collect, args = (CHIP_group_df, MOTIF_PATH, files_list))
+os.chdir(ofd)
+
+BINS = snippets.BINS(ofd, MOODS_HITS, bin_dir)
+
+BINS.bin_group_collect(ofd, False)
+
+BINS.bin_group_collect(ofd, True)
 
 print (stylize("TACMAN: Intersecting binned files with ChIP files and MOODs predictions", tacman_color))
 
-snippets.intersect_bin(MOTIF_PATH)
+BINS.intersect_bin(META.unique_MODES)
