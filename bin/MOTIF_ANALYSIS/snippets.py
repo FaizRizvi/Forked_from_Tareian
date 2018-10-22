@@ -16,11 +16,14 @@ from itertools import groupby, chain
 from colored import stylize
 from collections import OrderedDict
 from os import walk
+import time
 
 #COLOR PARAMETERS
 moods_color = colored.fg(202) + colored.attr(1)
 MARIO_PARSE_color = colored.fg(14) + colored.attr(1)
 MAKE_DIR_color = colored.fg(201) + colored.attr(1)
+tacman_color = colored.fg(226) + colored.attr(1)
+checkpoint = stylize("################################################################################################################", tacman_color)
 
 def bin_parse(x):
     BIN_FILE = []
@@ -45,6 +48,18 @@ def bin_parse(x):
 
     return BIN_FILE
 
+def clock(x, y, z):
+    elapsed = (time.time() - x)
+    if elapsed <= 60:
+            print (stylize("---It took TACMAN %s seconds---" % elapsed, tacman_color))
+
+    else:
+            minutes = elapsed/60
+            print (stylize("---It took TACMAN %s minutes---" % minutes, tacman_color))
+
+    elapsed_min = (time.time() - y)/60
+    print (stylize("---TACMAN has been running for %s minutes ---" % elapsed_min, tacman_color))
+
 def make_set_dir(x, y):
     cwd = os.getcwd()
 
@@ -62,6 +77,7 @@ def make_set_dir(x, y):
 
 def merge_rep_BEDS(x, d, og_dir, modes):
     df = d[d.TF_Name == x]
+    TF_n = d["TF_Name"].unique()
 
     for m in modes:
 
@@ -81,7 +97,7 @@ def merge_rep_BEDS(x, d, og_dir, modes):
         os.chdir(og_dir)
 
         frame = pd.concat(list_)
-
+        frame["TF_name"] = TF_n
         frame.sort_values(by=[0, 1, 2], inplace=True)
         frame.to_csv(tf_file_name, sep="\t", index=False, header=False)
 
@@ -89,37 +105,42 @@ def merge_rep_BEDS(x, d, og_dir, modes):
         c = a.merge()
         d = c.moveto(tf_file_name)
 
-def parse_percentile(x, y, p, tf_name):
+def parse_percentile(x, y, p, tf_name, blacklist):
     TF_name = y.loc[y['file_path'] == x, 'TF_Name'].iloc[0]
     MODE_name = y.loc[y['file_path'] == x, 'MODE'].iloc[0]
     og_file_name = os.path.basename(x)
     tf_file_name = TF_name + "_" + MODE_name + ".bed"
 
-    df = pd.read_csv(x, sep="\t", header=None)
+    a = pybedtools.BedTool(x)
+    b = pybedtools.BedTool(blacklist)
+    a_and_b = a.intersect(b, v=True)     
+    df = a_and_b.to_dataframe()
+    
     col_num = len(df.columns)
-    df[3] = TF_name
-
+    
     if col_num == 11:
-        per_len = (len(df[7]))/p
-        df.sort_values(by=[7], ascending=False, inplace=True)
+        per_len = len(df.index)/p
+        df.sort_values(by=["thickEnd"], ascending=False, inplace=True)
         df = df.head(per_len)
+        df["TF_name"] = TF_name
 
         if tf_name == True:
-            df.to_csv(tf_file_name, sep="\t", index=False, header = False, columns= [0,1,2,3])
+            df.to_csv(tf_file_name, sep="\t", index=False, header = False, columns= ["chrom","start","end","TF_name"])
 
         else:
-            df.to_csv(og_file_name, sep="\t", index=False, header = False, columns= [0,1,2,3])
+            df.to_csv(og_file_name, sep="\t", index=False, header = False, columns= ["chrom","start","end","TF_name"])
 
     elif col_num == 13:
-        per_len = (len(df[12]))/p
+        per_len = len(df.index)/p
         df.sort_values(by=[12], ascending=False, inplace=True)
         df = df.head(per_len)
+        df["TF_name"] = TF_name
 
         if tf_name == True:
-            df.to_csv(tf_file_name, sep="\t", index=False, header = False, columns= [0,1,2,3])
+            df.to_csv(tf_file_name, sep="\t", index=False, header = False, columns= [0,1,2,"TF_name"])
 
         else:
-            df.to_csv(og_file_name, sep="\t", index=False, header = False, columns= [0,1,2,3])
+            df.to_csv(og_file_name, sep="\t", index=False, header = False, columns= [0,1,2,"TF_name"])
 
 class BINS:
     def __init__(self, path, DHS_list, bin_dir):
@@ -138,25 +159,24 @@ class BINS:
 
     def bin_group_collect(self, ofd, bin_DHS):        
         binned_genome_meta = []
+
         if bin_DHS == True:
             f_name = "BINNED_DHS_ONLY.bed"
             final_name = "DHS.bin"
-            files_to_bin = self.DHS_list
+            fname = self.DHS_list
+            frame = pd.read_csv(fname, sep="\t", header=None, usecols=[0,1,2,3])
 
         else:
             f_name = "BINNED_UNION.bed"
             final_name = "Union.bin"
             files_to_bin = self.files[1:]
+            list_df = []
 
-        frame = pd.DataFrame()
-        list_df = []
-
-        # Create a list of bed files the concactenate
-        for fname in files_to_bin:
-            bin_df = pd.read_csv(fname, usecols= [0,1,2], sep="\t", header=None)
-            list_df.append(bin_df)
-
-        frame = pd.concat(list_df)
+            for fname in files_to_bin:
+                bin_df = pd.read_csv(fname, sep="\t", header=None, usecols=[0,1,2,3])
+                list_df.append(bin_df)
+            
+            frame = pd.concat(list_df)
 
         frame.sort_values(by=[0, 1, 2], inplace=True)
 
@@ -165,8 +185,8 @@ class BINS:
         a = pybedtools.BedTool.from_dataframe(frame)
         c = a.merge()
         df = c.moveto(f_name)
-
-        df = pd.read_csv(f_name, sep="\t", header=None)
+        
+        df = pd.read_csv(f_name, sep="\t", header=None, usecols=[0,1,2,3])
 
         df.columns = ["Chr", "Start", "Stop"]
 
@@ -212,17 +232,18 @@ class BINS:
                 e = a_and_d.moveto("MOODS_DHS_RE_SUB_BINS_" + m + ".bed")
 
 class MARIO:
-    def __init__(self, chip_bed, percentile):
+    def __init__(self, chip_bed, percentile, blacklist):
         self.chip_bed = chip_bed
         self.percentile = percentile
+        self.blacklist = blacklist
 
     def parse_singles_percentile(self, df, percentile):
         percentiles = 100/percentile
-        df["file_path"].apply(parse_percentile, args = (df, percentile, True))
+        df["file_path"].apply(parse_percentile, args = (df, percentile, True, self.blacklist))
 
     def parse_replicate_percentile(self, df, percentile):
         percentiles = 100/percentile
-        df["file_path"].apply(parse_percentile, args = (df, percentile, False))
+        df["file_path"].apply(parse_percentile, args = (df, percentile, False, self.blacklist))
 
     def merge_replicate_BEDS(self, df, og_dir, modes, tf_df):
         tf = pd.DataFrame(tf_df)
