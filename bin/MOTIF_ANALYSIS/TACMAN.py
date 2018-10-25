@@ -112,6 +112,8 @@ for i in MOODS_HITS:
 snippets.clock(MOODS_start_time, start_time, "Parse MOODS")
 print (checkpoint)
 
+MARIO_start_time = time.time()
+
 # change the working directory back to the ofd
 os.chdir(ofd)
 
@@ -119,9 +121,6 @@ os.chdir(ofd)
 """The next step is to import the ChIP files from MARIO then take the nth percentile and return merged 
 This will also include parsing the META metadatafile from MARIOS and using it to reference."""
 print (stylize("TACMAN: Parsing MARIO Data", tacman_color))
-
-# Start the Mario timer
-MARIO_start_time = time.time()
 
 # Create the META file object for the ChIP data 
 META = snippets.META(META, CHIP_BED)
@@ -139,6 +138,8 @@ Percentile_start_time = time.time()
 
 print (stylize("TACMAN: Parsing Percentiles from ChIP bed files", tacman_color))
 
+percentile_folder = []
+
 # For each percentile cutoff parse the data and save in a subfolder of ChIP
 for i in percentiles:
     percentile = (100 - (100 / i))
@@ -154,6 +155,8 @@ for i in percentiles:
     obj.merge_replicate_BEDS(META.unique_tf_rep_df, per_wd, META.unique_MODES, META.unique_TF_reps_names)
 
     shutil.rmtree(unmerg_dir)
+    percentile_folder.append(per_wd)
+
     os.chdir(chip_dir)
 
 #Report the time for the percentile parse
@@ -175,21 +178,33 @@ os.chdir(ofd)
 BINS_start_time = time.time()
 
 # Create the BIN object
-BINS = snippets.BINS(ofd, MOODS_HITS, bin_dir)
+BINS = snippets.BINS(ofd, DHS_BED, bin_dir)
 
 # Bin the union of all files 
 print (stylize("TACMAN: Binnning Union", tacman_color))
-BINS.bin_group_collect(ofd, False)
+BINS.bin_group_collect(ofd, False, BLACKLIST)
 
-# Bin the DHS areas only
+# Bin the DHS areas only. This will also remove the blacklist areas from the DHS file. 
 print (stylize("TACMAN: Binnning DHS", tacman_color))
-BINS.bin_group_collect(ofd, True)
+BINS.bin_group_collect(ofd, True, BLACKLIST)
 
 # Print out the time it took to Bin the Genomes
 print (checkpoint)
 snippets.clock(BINS_start_time, start_time, "Binning Genomes")
 print (checkpoint)
 
+####################################------------CHECKPOINT 4-----------------###################################
+"""Intersect all of the files that have been collected with the two BIN reference files"""
+os.chdir(ofd)
+
 print (stylize("TACMAN: Intersecting binned files with ChIP files and MOODs predictions", tacman_color))
 
-BINS.intersect_bin(META.unique_MODES)
+intersect_dir = snippets.make_set_dir("intersection", True)
+
+# Intersect the CHIP files with the two bin reference files
+BINS.intersect_chip_bin(META.unique_MODES, BINS.dhs, percentile_folder, intersect_dir, "DHS")
+BINS.intersect_chip_bin(META.unique_MODES, BINS.union, percentile_folder, intersect_dir, "UNION")
+
+# Intersect the MOODS files with the two bin reference files
+BINS.intersect_moods_bin(BINS.dhs)
+BINS.intersect_moods_bin(BINS.union)

@@ -33,17 +33,15 @@ def bin_parse(x):
     chrom = str(x['Chr'])
     bins_zero = bins - 1
     counter = 0
-
-    print ("Binning BED: Writing Bins for: " + peaks)
+    
     for i in range(int(bins_zero)):
         bin_track = counter * 100
         bin_start = start + bin_track
         bin_end = bin_start + 99
 
-        tmp3 = chrom, bin_start, bin_end, peaks, bins
-
+        tmp3 = (chrom, bin_start, bin_end, peaks, bins)
         BIN_FILE.append(tmp3)
-
+        
         counter = counter + 1
 
     return BIN_FILE
@@ -77,7 +75,6 @@ def make_set_dir(x, y):
 
 def merge_rep_BEDS(x, d, og_dir, modes):
     df = d[d.TF_Name == x]
-    TF_n = d["TF_Name"].unique()
 
     for m in modes:
 
@@ -97,7 +94,7 @@ def merge_rep_BEDS(x, d, og_dir, modes):
         os.chdir(og_dir)
 
         frame = pd.concat(list_)
-        frame["TF_name"] = TF_n
+        frame["TF_name"] = x
         frame.sort_values(by=[0, 1, 2], inplace=True)
         frame.to_csv(tf_file_name, sep="\t", index=False, header=False)
 
@@ -143,7 +140,7 @@ def parse_percentile(x, y, p, tf_name, blacklist):
             df.to_csv(og_file_name, sep="\t", index=False, header = False, columns= [0,1,2,"TF_name"])
 
 class BINS:
-    def __init__(self, path, DHS_list, bin_dir):
+    def __init__(self, path, DHS_BED, bin_dir):
         f = []
         
         for dir_, _, files in os.walk(path):
@@ -154,26 +151,37 @@ class BINS:
         
         self.ofd = path
         self.files = f
-        self.DHS_list = DHS_list
+        self.DHS_BED = DHS_BED
         self.bin_dir = bin_dir
 
-    def bin_group_collect(self, ofd, bin_DHS):        
-        binned_genome_meta = []
-
+    def bin_group_collect(self, ofd, bin_DHS, blacklist):        
+        print ("Bin Group Collect")
         if bin_DHS == True:
             f_name = "BINNED_DHS_ONLY.bed"
-            final_name = "DHS.bin"
-            fname = self.DHS_list
-            frame = pd.read_csv(fname, sep="\t", header=None, usecols=[0,1,2,3])
+            final_name = "DHS.bin.bed"
+            DHS_BED = self.DHS_BED
+            self.dhs = final_name
 
+            tmp_frame = pd.read_csv(DHS_BED, sep="\t", header=None)
+            tmp_frame.sort_values(by=[0, 1, 2], inplace=True)
+            
+            moods_BEDS = pybedtools.BedTool.from_dataframe(tmp_frame)
+            moods_BEDS_merge = moods_BEDS.merge()
+
+            b = pybedtools.BedTool(blacklist)
+            moods_BEDS_merge_and_b = moods_BEDS_merge.intersect(b, v=True)     
+            
+            frame = moods_BEDS_merge_and_b.to_dataframe()
+            
         else:
             f_name = "BINNED_UNION.bed"
-            final_name = "Union.bin"
+            final_name = "Union.bin.bed"
             files_to_bin = self.files[1:]
             list_df = []
+            self.union = final_name
 
             for fname in files_to_bin:
-                bin_df = pd.read_csv(fname, sep="\t", header=None, usecols=[0,1,2,3])
+                bin_df = pd.read_csv(fname, sep="\t", header=None, usecols=[0,1,2])
                 list_df.append(bin_df)
             
             frame = pd.concat(list_df)
@@ -184,12 +192,8 @@ class BINS:
 
         a = pybedtools.BedTool.from_dataframe(frame)
         c = a.merge()
-        df = c.moveto(f_name)
+        df = c.to_dataframe(names=["Chr", "Start", "Stop"])
         
-        df = pd.read_csv(f_name, sep="\t", header=None, usecols=[0,1,2,3])
-
-        df.columns = ["Chr", "Start", "Stop"]
-
         df["len"] = df["Stop"] - df["Start"] + 1
         df["bins"] = df["len"]/100
         df["bins"] = df["bins"].apply(math.ceil)
@@ -197,40 +201,42 @@ class BINS:
 
         df.to_csv(f_name, sep="\t", index=False)
 
-        binned_file = df.apply(bin_parse, axis = 1) 
+        BIN_FILE = df.apply(bin_parse, axis=1) 
+        
+        labels = ["chr", "bin_start", "bin_end", "peaks", "bins"]
 
-        binned_file.to_csv(final_name, sep="\t", index=False)
+        df = pd.DataFrame.from_records(BIN_FILE, columns=labels)
+
+        df.to_csv(final_name, sep="\t", index=False)
 
         os.chdir(self.ofd)
 
-        bin_files = []
-        self.bin_files = bin_files
-        self.bin_files.append(final_name)
+    def intersect_chip_bin(self, modes, bin_file, percentile_folder, intersect_dir, n):
+        print ("Intersect ChIP with BINS")
+        for i in percentile_folder:
+            os.chdir(i)
+            base = os.path.basename(i)
+            
+            for m in modes:
+                y = glob.glob("*" + m + ".bed")
 
-    def intersect_bin(self, modes):
-        for m in modes:
-            y = glob.glob("*" + m + ".bed")
-
-            for i in self.bin_files:
                 print ("Intersect BED: List to intersect: " + y)
 
-                a = pybedtools.BedTool(i)
+                a = pybedtools.BedTool(bin_file)
                 b = pybedtools.BedTool(y)
 
                 print ("Intersect BED: Working on: " + f_name)
 
                 a_and_b = a.intersect(b, wa=True, wb=True)
 
-                c = a_and_b.moveto("ChIP_BINS" + m + ".bed")
+                os.chdir(intersect_dir)
+                snippets.make_set_dir(base, False)
 
-                d = pybedtools.BedTool(x)
+                c = a_and_b.moveto(n + base + m + ".bed")
 
-                print ("Intersect BED: Working on: CHIP")
-
-                a_and_d = a.intersect(d, wa=True, wb=True)
-
-                e = a_and_d.moveto("MOODS_DHS_RE_SUB_BINS_" + m + ".bed")
-
+    def intersect_moods_bin(self):
+        pass
+        
 class MARIO:
     def __init__(self, chip_bed, percentile, blacklist):
         self.chip_bed = chip_bed
@@ -238,11 +244,9 @@ class MARIO:
         self.blacklist = blacklist
 
     def parse_singles_percentile(self, df, percentile):
-        percentiles = 100/percentile
         df["file_path"].apply(parse_percentile, args = (df, percentile, True, self.blacklist))
 
     def parse_replicate_percentile(self, df, percentile):
-        percentiles = 100/percentile
         df["file_path"].apply(parse_percentile, args = (df, percentile, False, self.blacklist))
 
     def merge_replicate_BEDS(self, df, og_dir, modes, tf_df):
