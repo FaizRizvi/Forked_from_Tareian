@@ -180,13 +180,13 @@ BINS_start_time = time.time()
 # Create the BIN object
 BINS = snippets.BINS(ofd, DHS_BED, bin_dir)
 
-# Bin the union of all files 
-print (stylize("TACMAN: Binnning Union", tacman_color))
-BINS.bin_group_collect(ofd, False, BLACKLIST)
-
 # Bin the DHS areas only. This will also remove the blacklist areas from the DHS file. 
 print (stylize("TACMAN: Binnning DHS", tacman_color))
 BINS.bin_group_collect(ofd, True, BLACKLIST)
+
+# Bin the union of all files 
+print (stylize("TACMAN: Binnning Union", tacman_color))
+BINS.bin_group_collect(ofd, False, BLACKLIST)
 
 # Print out the time it took to Bin the Genomes
 print (checkpoint)
@@ -206,5 +206,11 @@ BINS.intersect_chip_bin(META.unique_MODES, BINS.dhs, percentile_folder, intersec
 BINS.intersect_chip_bin(META.unique_MODES, BINS.union, percentile_folder, intersect_dir, "UNION")
 
 # Intersect the MOODS files with the two bin reference files
-BINS.intersect_moods_bin(BINS.dhs)
-BINS.intersect_moods_bin(BINS.union)
+BINS.intersect_moods_bin(BINS.dhs, MOODS_wd, intersect_dir, "DHS")
+BINS.intersect_moods_bin(BINS.union, MOODS_wd, intersect_dir, "UNION")
+
+####################################------------CHECKPOINT 5-----------------###################################
+"""Start analyzing the intersection data gathered. This will include grouping the datae, 
+parsing a lot, and then calculating P/R. I will also do all analysis in this section that 
+I want to perform. """
+

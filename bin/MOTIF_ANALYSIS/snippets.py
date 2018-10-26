@@ -19,32 +19,28 @@ from os import walk
 import time
 
 #COLOR PARAMETERS
-moods_color = colored.fg(202) + colored.attr(1)
-MARIO_PARSE_color = colored.fg(14) + colored.attr(1)
-MAKE_DIR_color = colored.fg(201) + colored.attr(1)
 tacman_color = colored.fg(226) + colored.attr(1)
 checkpoint = stylize("################################################################################################################", tacman_color)
 
-def bin_parse(x):
-    BIN_FILE = []
+def bin_write(x, list_of_bins, chrom, peaks, bins, start):
+        bin_track = x * 100
+        bin_start = start + bin_track
+        bin_end = bin_start + 99
+
+        d = pd.DataFrame([chrom, bin_start, bin_end, peaks, bins]).transpose()
+                
+        list_of_bins.append(d)
+
+def bin_parse(x, list_of_bins):
     peaks = x["ID"]
     bins = x['bins']
     start = x['Start']
     chrom = str(x['Chr'])
-    bins_zero = bins - 1
     counter = 0
-    
-    for i in range(int(bins_zero)):
-        bin_track = counter * 100
-        bin_start = start + bin_track
-        bin_end = bin_start + 99
 
-        tmp3 = (chrom, bin_start, bin_end, peaks, bins)
-        BIN_FILE.append(tmp3)
-        
-        counter = counter + 1
+    r = pd.Series(range(int(bins)))
 
-    return BIN_FILE
+    r.apply(bin_write, args=(list_of_bins, chrom, peaks, bins, start))
 
 def clock(x, y, z):
     elapsed = (time.time() - x)
@@ -151,7 +147,7 @@ class BINS:
         
         self.ofd = path
         self.files = f
-        self.DHS_BED = DHS_BED
+        self.DHS_BED = os.path.abspath(DHS_BED)
         self.bin_dir = bin_dir
 
     def bin_group_collect(self, ofd, bin_DHS, blacklist):        
@@ -162,17 +158,13 @@ class BINS:
             DHS_BED = self.DHS_BED
             self.dhs = final_name
 
-            tmp_frame = pd.read_csv(DHS_BED, sep="\t", header=None)
-            tmp_frame.sort_values(by=[0, 1, 2], inplace=True)
-            
-            moods_BEDS = pybedtools.BedTool.from_dataframe(tmp_frame)
-            moods_BEDS_merge = moods_BEDS.merge()
-
+            a = pybedtools.BedTool(DHS_BED)
             b = pybedtools.BedTool(blacklist)
-            moods_BEDS_merge_and_b = moods_BEDS_merge.intersect(b, v=True)     
+
+            a_and_b = a.intersect(b, v=True)     
             
-            frame = moods_BEDS_merge_and_b.to_dataframe()
-            
+            df = a_and_b.to_dataframe(names=["Chr", "Start", "Stop"])
+
         else:
             f_name = "BINNED_UNION.bed"
             final_name = "Union.bin.bed"
@@ -186,29 +178,29 @@ class BINS:
             
             frame = pd.concat(list_df)
 
-        frame.sort_values(by=[0, 1, 2], inplace=True)
+            frame.sort_values(by=[0, 1, 2], inplace=True)
 
-        os.chdir(self.bin_dir)
-
-        a = pybedtools.BedTool.from_dataframe(frame)
-        c = a.merge()
-        df = c.to_dataframe(names=["Chr", "Start", "Stop"])
+            a = pybedtools.BedTool.from_dataframe(frame)
+            c = a.merge()
+        
+            df = c.to_dataframe(names=["Chr", "Start", "Stop"])
         
         df["len"] = df["Stop"] - df["Start"] + 1
         df["bins"] = df["len"]/100
         df["bins"] = df["bins"].apply(math.ceil)
         df["ID"] = df["Chr"] + "_" + df["Start"].apply(str) + "_" + df["Stop"].apply(str)
+        
+        os.chdir(self.bin_dir)
 
         df.to_csv(f_name, sep="\t", index=False)
 
-        BIN_FILE = df.apply(bin_parse, axis=1) 
+        list_of_bins = []
+
+        df.apply(bin_parse, axis=1, args=(list_of_bins,)) 
         
-        labels = ["chr", "bin_start", "bin_end", "peaks", "bins"]
-
-        df = pd.DataFrame.from_records(BIN_FILE, columns=labels)
-
-        df.to_csv(final_name, sep="\t", index=False)
-
+        df = pd.concat(list_of_bins)
+        df.to_csv(final_name, sep="\t", index=False, header=False)
+        
         os.chdir(self.ofd)
 
     def intersect_chip_bin(self, modes, bin_file, percentile_folder, intersect_dir, n):
@@ -220,9 +212,7 @@ class BINS:
             for m in modes:
                 y = glob.glob("*" + m + ".bed")
 
-                print ("Intersect BED: List to intersect: " + y)
-
-                a = pybedtools.BedTool(bin_file)
+                a = pybedtools.BedTool((self.bin_dir + "/" + bin_file))
                 b = pybedtools.BedTool(y)
 
                 print ("Intersect BED: Working on: " + f_name)
@@ -230,13 +220,23 @@ class BINS:
                 a_and_b = a.intersect(b, wa=True, wb=True)
 
                 os.chdir(intersect_dir)
-                snippets.make_set_dir(base, False)
+                make_set_dir("ChIP", False)
 
                 c = a_and_b.moveto(n + base + m + ".bed")
 
-    def intersect_moods_bin(self):
-        pass
-        
+    def intersect_moods_bin(self, bin_file, MOODS_dir, intersect_dir, n):
+        os.chdir(MOODS_dir)
+        y = glob.glob("*.bed")
+        p_val = y.replace("GM12878_DHS_MOTIFS_", "").replace(".bed", "")
+        for i in y:
+            a = pybedtools.BedTool((self.bin_dir + "/" + bin_file))
+            b = pybedtools.BedTool(i)
+            a_and_b = a.intersect(b, wa=True, wb=True)
+
+            os.chdir(intersect_dir)
+            snippets.make_set_dir("DHS", False)
+            c = a_and_b.moveto(n + p_val + ".bed")
+            
 class MARIO:
     def __init__(self, chip_bed, percentile, blacklist):
         self.chip_bed = chip_bed
