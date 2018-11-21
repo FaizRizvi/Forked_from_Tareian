@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 from __future__ import print_function
-import time
-start_time = time.time()
 
 import snippets
 import os
@@ -30,187 +28,152 @@ parser.add_argument("-bl", "--blacklist", dest='blacklist', help="Blacklist regi
 # set the arguments from the command line to variables in the args object
 args = parser.parse_args()
 
-# set variables from arguments
-MOODS_HITS = args.moods_hits
-DHS_BED = args.DHS_BED
-TF_NAME_FILE = args.tf_name_file
-DOMAIN_BED = args.domain_bed
-CHIP_BED = args.CHIP_bed
-META = args.META
-BLACKLIST = args.blacklist
-
 ##########################-----------Parameters------------##############################
-"""Set up the colors to be used on the display and also what the checpoint borders would look ilke"""
+"""Set up the colors to be used on the display and also what the checpoint borders would look ilke
+Also set up the directories. This needs to be changed in the future to makte it easy to set input and output paths"""
 tacman_color = colored.fg(226) + colored.attr(1)
-checkpoint = stylize("################################################################################################################", tacman_color)
-print (checkpoint)
 
 # set up some reference directory file locatios
-cwd = os.getcwd()
-ifd = cwd + "/input"
-ofd = cwd + "/output"
-uwd = ofd + "/unmerged"
+CWD = os.getcwd()
+OFD = CWD + "/output"
 
 # If the path does not exists for the output directory, create it
-if not os.path.exists(ofd):
-        os.makedirs(ofd)
+if not os.path.exists(OFD):
+        os.makedirs(OFD)
 
 # Print the names of the directories for the user
-print (stylize("TACMAN: The common working directory is: " + cwd, tacman_color))
-print (stylize("TACMAN: The input directory is: " + ifd, tacman_color))
-print (stylize("TACMAN: The output directory is: " + ofd, tacman_color))
-print (checkpoint)
+print (stylize("TACMAN: The common working directory is: " + CWD, tacman_color))
+print (stylize("TACMAN: The output directory is: " + OFD, tacman_color))
 
 # Set up the various lists that will be used. The first list is the percentile cutoff that wille be used
+percentiles = [1, 2, 4, 10, 20, 100]
+
+#These are a bunch of lists that I will populate. 
 # the next list will hold the MOODS objects that are created
 # the last list has the BIN files that will be created. these might be replaced by objects in later versions
-percentiles = [1, 2, 4, 10, 20, 100]
+percentile_len = len(percentiles)
+percentile_counter = 1
 MOODS_OBJ = []
 BINS = []
+percentile_folder = []
+MOODS_len = len(args.moods_hits)
+MOODS_counter = 1
 
 ####################################------------CHECKPOINT 1-----------------###################################
 """From here on the script will process the motif file that was produced from MOODS or provided as the -o option.
-The TF file must look ilke the following with a header column that matches the following column IDs"""
+The TF file must look ilke the following with a header column that matches the following column IDs
 
-# Motif_ID		TF_Name
-# M00116_1.97d	TFAP2B
-
-#Find the time that has elasped between the loading of the program and decide how to display it
-elapsed = (time.time() - start_time)
-
-if elapsed <= 60:
-        print (stylize("---It took TACMAN %s seconds to boot up and set up---" % elapsed, tacman_color))
-        print (checkpoint)
-
-else:
-        minutes = elapsed/60
-        print (stylize("---It took TACMAN %s minutes to boot up and set up---" % minutes, tacman_color))
-        print (checkpoint)
-     
+Motif_ID	TF_Name
+M00116_1.97d	TFAP2B
+ """   
 print (stylize("TACMAN: Parsing MOODS", tacman_color))
 
 # Change the working directory to the output file directory
-os.chdir(ofd)
+os.chdir(OFD)
 
-# Make the subdirectory MOODS in the OFD
+# Make the subdirectory MOODS in the output file directory
 MOODS_wd = snippets.make_set_dir("MOODS", True)
 
-# Start the moods timer for profiling
-MOODS_start_time = time.time()
+# Create META object
+META = snippets.META(args.META, args.CHIP_bed, args.tf_name_file)
 
 # For every MOODS file with a different p-value create an object
-for i in MOODS_HITS:
-    length = len(MOODS_HITS)
-    obj = snippets.MOODS(i, TF_NAME_FILE, ofd, DOMAIN_BED)
-    obj.dict_TF_df()
-    obj.parse_moods()
-    obj.bed_intersect()
-    obj.domain_parse()
+for i in args.moods_hits:
+    print ("working on file: " + str(MOODS_counter) + "/" + str(MOODS_len))
+    obj = snippets.MOODS(i, OFD, args.domain_bed, META.tf_dict, META.unique_TFS)
+    MOODS_counter = MOODS_counter + 1
     MOODS_OBJ.append(obj)
 
-# calculate the time it took to run the function
-snippets.clock(MOODS_start_time, start_time, "Parse MOODS")
-print (checkpoint)
-
-MARIO_start_time = time.time()
-
-# change the working directory back to the ofd
-os.chdir(ofd)
+# change the working directory back to the OFD
+os.chdir(OFD)
 
 ####################################------------CHECKPOINT 2-----------------###################################
 """The next step is to import the ChIP files from MARIO then take the nth percentile and return merged 
 This will also include parsing the META metadatafile from MARIOS and using it to reference."""
-print (stylize("TACMAN: Parsing MARIO Data", tacman_color))
-
-# Create the META file object for the ChIP data 
-META = snippets.META(META, CHIP_BED)
-META.META_parse()
-
-# Output the time
-snippets.clock(MARIO_start_time, start_time, "Parse MARIO")
-print (checkpoint)
 
 # make the Chip sub directory
 chip_dir = snippets.make_set_dir("chip", True)
 
-# start the time for the parsing function
-Percentile_start_time = time.time()
-
 print (stylize("TACMAN: Parsing Percentiles from ChIP bed files", tacman_color))
-
-percentile_folder = []
 
 # For each percentile cutoff parse the data and save in a subfolder of ChIP
 for i in percentiles:
     percentile = (100 - (100 / i))
+    
+    print ("Working on parsing percentile cutoff: " + str(percentile_counter) + "/" + str(percentile_len))
     per_wd = snippets.make_set_dir("percentile_" + str(percentile), True)
 
-    obj = snippets.MARIO(CHIP_BED, i, BLACKLIST)
+    obj = snippets.MARIO(args.CHIP_bed, i, args.blacklist)
 
     obj.parse_singles_percentile(META.unique_tf_single_df, i)
-
+    
     unmerg_dir = snippets.make_set_dir("unmerged", True)
 
-    obj.parse_replicate_percentile(META.unique_tf_rep_df, i)
-    obj.merge_replicate_BEDS(META.unique_tf_rep_df, per_wd, META.unique_MODES, META.unique_TF_reps_names)
+    obj.parse_replicate_percentile(META.unique_tf_rep_df, i, per_wd, META.unique_MODES, META.unique_TF_reps_names)
 
     shutil.rmtree(unmerg_dir)
+
     percentile_folder.append(per_wd)
-
+    percentile_counter = percentile_counter + 1
+    
     os.chdir(chip_dir)
-
-#Report the time for the percentile parse
-snippets.clock(Percentile_start_time, start_time, "Parse Percentiles")
-print (checkpoint)
 
 ####################################------------CHECKPOINT 3-----------------###################################
 """The next step is to take the merged BED files and then create a composite BED file to BIN based on MODE
 Go back to the base directory"""
-os.chdir(ofd)
+os.chdir(OFD)
 
-# Create the bin directory under the ofd
+# Create the bin directory under the OFD
 bin_dir = snippets.make_set_dir("BINS", True)
 
 # Go back to OFD since it where the file reference from
-os.chdir(ofd)
-
-# Start the timer for the Binning function
-BINS_start_time = time.time()
+os.chdir(OFD)
 
 # Create the BIN object
-BINS = snippets.BINS(ofd, DHS_BED, bin_dir)
+BINS = snippets.BINS(chip_dir, args.DHS_BED, bin_dir, OFD, chip_dir)
 
 # Bin the DHS areas only. This will also remove the blacklist areas from the DHS file. 
 print (stylize("TACMAN: Binnning DHS", tacman_color))
-BINS.bin_group_collect(ofd, True, BLACKLIST)
+BINS.bin_group_collect(OFD, True, args.blacklist)
 
 # Bin the union of all files 
 print (stylize("TACMAN: Binnning Union", tacman_color))
-BINS.bin_group_collect(ofd, False, BLACKLIST)
-
-# Print out the time it took to Bin the Genomes
-print (checkpoint)
-snippets.clock(BINS_start_time, start_time, "Binning Genomes")
-print (checkpoint)
+BINS.bin_group_collect(OFD, False, args.blacklist)
 
 ####################################------------CHECKPOINT 4-----------------###################################
 """Intersect all of the files that have been collected with the two BIN reference files"""
-os.chdir(ofd)
+os.chdir(OFD)
 
-print (stylize("TACMAN: Intersecting binned files with ChIP files and MOODs predictions", tacman_color))
-
+print (stylize("TACMAN: Intersecting binned files with ChIP files", tacman_color))
 intersect_dir = snippets.make_set_dir("intersection", True)
+intersect_chip_dir = snippets.make_set_dir("CHIP", True)
 
 # Intersect the CHIP files with the two bin reference files
-BINS.intersect_chip_bin(META.unique_MODES, BINS.dhs, percentile_folder, intersect_dir, "DHS")
-BINS.intersect_chip_bin(META.unique_MODES, BINS.union, percentile_folder, intersect_dir, "UNION")
+print (stylize("TACMAN: Intersecting binned DHS with ChIP files", tacman_color))
+BINS.intersect_chip_bin(META.unique_MODES, BINS.dhs, percentile_folder, intersect_chip_dir, "DHS", META.unique_TF_reps_names)
+
+print (stylize("TACMAN: Intersecting binned UNION with ChIP files", tacman_color))
+BINS.intersect_chip_bin(META.unique_MODES, BINS.union, percentile_folder, intersect_chip_dir, "UNION", META.unique_TF_reps_names)
+
+os.chdir(intersect_dir)
+
+intersect_MOODS_dir = snippets.make_set_dir("MOODS", True)
 
 # Intersect the MOODS files with the two bin reference files
-BINS.intersect_moods_bin(BINS.dhs, MOODS_wd, intersect_dir, "DHS")
-BINS.intersect_moods_bin(BINS.union, MOODS_wd, intersect_dir, "UNION")
+print (stylize("TACMAN: Intersecting binned DHS with MOODs predictions", tacman_color))
+BINS.intersect_moods_bin(BINS.dhs, MOODS_wd, intersect_MOODS_dir, "DHS", META.unique_TF_reps_names)
+
+print (stylize("TACMAN: Intersecting binned UNION with MOODs predictions", tacman_color))
+BINS.intersect_moods_bin(BINS.union, MOODS_wd, intersect_MOODS_dir, "UNION", META.unique_TF_reps_names)
 
 ####################################------------CHECKPOINT 5-----------------###################################
 """Start analyzing the intersection data gathered. This will include grouping the datae, 
 parsing a lot, and then calculating P/R. I will also do all analysis in this section that 
 I want to perform. """
+
+print (stylize("TACMAN: Analyzing Results", tacman_color))
+
+os.chdir(OFD)
+
+results_dir = snippets.make_set_dir("results", True)
 

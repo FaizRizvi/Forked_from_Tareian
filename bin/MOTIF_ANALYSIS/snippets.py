@@ -11,48 +11,11 @@ import math
 import numpy as np
 import scipy
 import glob
-import colored
 from itertools import groupby, chain
-from colored import stylize
 from collections import OrderedDict
 from os import walk
 import time
-
-#COLOR PARAMETERS
-tacman_color = colored.fg(226) + colored.attr(1)
-checkpoint = stylize("################################################################################################################", tacman_color)
-
-def bin_write(x, list_of_bins, chrom, peaks, bins, start):
-        bin_track = x * 100
-        bin_start = start + bin_track
-        bin_end = bin_start + 99
-
-        d = pd.DataFrame([chrom, bin_start, bin_end, peaks, bins]).transpose()
-                
-        list_of_bins.append(d)
-
-def bin_parse(x, list_of_bins):
-    peaks = x["ID"]
-    bins = x['bins']
-    start = x['Start']
-    chrom = str(x['Chr'])
-    counter = 0
-
-    r = pd.Series(range(int(bins)))
-
-    r.apply(bin_write, args=(list_of_bins, chrom, peaks, bins, start))
-
-def clock(x, y, z):
-    elapsed = (time.time() - x)
-    if elapsed <= 60:
-            print (stylize("---It took TACMAN %s seconds---" % elapsed, tacman_color))
-
-    else:
-            minutes = elapsed/60
-            print (stylize("---It took TACMAN %s minutes---" % minutes, tacman_color))
-
-    elapsed_min = (time.time() - y)/60
-    print (stylize("---TACMAN has been running for %s minutes ---" % elapsed_min, tacman_color))
+import itertools
 
 def make_set_dir(x, y):
     cwd = os.getcwd()
@@ -69,34 +32,25 @@ def make_set_dir(x, y):
     else:
         pass
 
-def merge_rep_BEDS(x, d, og_dir, modes):
-    df = d[d.TF_Name == x]
+def bin_parse(x, list_of_bins):
+    peaks = x["ID"]
+    bins = x['bins']
+    start = x['Start']
+    chrom = str(x['Chr'])
+    counter = 0
 
-    for m in modes:
+    r = pd.Series(range(int(bins)))
 
-        t_df = df[df.MODE == m]
+    r.apply(bin_write, args=(list_of_bins, chrom, peaks, bins, start))
 
-        tf_file_name = x + "_" + m + ".bed"
+def bin_write(x, list_of_bins, chrom, peaks, bins, start):
+    bin_track = x * 100
+    bin_start = start + bin_track
+    bin_end = bin_start + 99
 
-        allFiles = t_df["file_path"]
-
-        frame = pd.DataFrame()
-        list_ = []
-
-        for ind_file in allFiles:
-            con_df = pd.read_csv(ind_file, sep="\t", header=None, usecols=[0,1,2,3])
-            list_.append(con_df)
-
-        os.chdir(og_dir)
-
-        frame = pd.concat(list_)
-        frame["TF_name"] = x
-        frame.sort_values(by=[0, 1, 2], inplace=True)
-        frame.to_csv(tf_file_name, sep="\t", index=False, header=False)
-
-        a = pybedtools.BedTool(tf_file_name)
-        c = a.merge()
-        d = c.moveto(tf_file_name)
+    d = pd.DataFrame([chrom, bin_start, bin_end, peaks, bins]).transpose()
+            
+    list_of_bins.append(d)
 
 def parse_percentile(x, y, p, tf_name, blacklist):
     TF_name = y.loc[y['file_path'] == x, 'TF_Name'].iloc[0]
@@ -135,23 +89,56 @@ def parse_percentile(x, y, p, tf_name, blacklist):
         else:
             df.to_csv(og_file_name, sep="\t", index=False, header = False, columns= [0,1,2,"TF_name"])
 
+def merge_rep_BEDS(x, d, og_dir, modes):
+    df = d[d.TF_Name == x]
+
+    for m in modes:
+
+        t_df = df[df.MODE == m]
+
+        tf_file_name = x + "_" + m + ".bed"
+
+        allFiles = t_df["file_path"]
+
+        frame = pd.DataFrame()
+        list_ = []
+
+        for ind_file in allFiles:
+            con_df = pd.read_csv(ind_file, sep="\t", header=None, usecols=[0,1,2,3], low_memory = False)
+            list_.append(con_df)
+
+        os.chdir(og_dir)
+
+        frame = pd.concat(list_)
+        frame["TF_name"] = x
+        frame.sort_values(by=[0, 1, 2], inplace=True)
+        
+        a = pybedtools.BedTool.from_dataframe(frame)
+        c = a.merge()
+        e = c.to_dataframe()
+        e["TF_name"] = x
+        e.to_csv(tf_file_name, sep="\t", index=False, header=False)
+
 class BINS:
-    def __init__(self, path, DHS_BED, bin_dir):
-        f = []
-        
-        for dir_, _, files in os.walk(path):
-            for fileName in files:
-                relDir = os.path.relpath(dir_, path)
-                relFile = os.path.join(relDir, fileName)
-                f.append(relFile)
-        
-        self.ofd = path
-        self.files = f
+    def __init__(self, path, DHS_BED, bin_dir, ofd, ChIP_dir):
         self.DHS_BED = os.path.abspath(DHS_BED)
+        self.ofd = ofd
+        
+        f_ = []
+
+        for root,dirs,filenames in os.walk(path):
+            filenames = [g for g in filenames if not g[0] == '.']
+            dirs[:] = [d for d in dirs if not d[0] == '.']
+            for f in filenames:
+                relFile = os.path.abspath(os.path.join(root, f))
+                f_.append(relFile)
+
+        f_.append(self.DHS_BED)
+        self.files = f_
+
         self.bin_dir = bin_dir
 
     def bin_group_collect(self, ofd, bin_DHS, blacklist):        
-        print ("Bin Group Collect")
         if bin_DHS == True:
             f_name = "BINNED_DHS_ONLY.bed"
             final_name = "DHS.bin.bed"
@@ -168,11 +155,10 @@ class BINS:
         else:
             f_name = "BINNED_UNION.bed"
             final_name = "Union.bin.bed"
-            files_to_bin = self.files[1:]
             list_df = []
             self.union = final_name
 
-            for fname in files_to_bin:
+            for fname in self.files:
                 bin_df = pd.read_csv(fname, sep="\t", header=None, usecols=[0,1,2])
                 list_df.append(bin_df)
             
@@ -199,43 +185,54 @@ class BINS:
         df.apply(bin_parse, axis=1, args=(list_of_bins,)) 
         
         df = pd.concat(list_of_bins)
+        df['index']=df.reset_index().index
+        df["bin_ID"] = "bin_" + df["index"].apply(str)
         df.to_csv(final_name, sep="\t", index=False, header=False)
         
         os.chdir(self.ofd)
 
-    def intersect_chip_bin(self, modes, bin_file, percentile_folder, intersect_dir, n):
+    def intersect_chip_bin(self, modes, bin_file, percentile_folder, intersect_dir, bin_name, tf_names):
         print ("Intersect ChIP with BINS")
         for i in percentile_folder:
-            os.chdir(i)
             base = os.path.basename(i)
             
             for m in modes:
-                y = glob.glob("*" + m + ".bed")
+                os.chdir(i)
+                list_df = []
+                
+                for fname in glob.glob("*" + m + ".bed"):
+                    bin_df = pd.read_csv(fname, sep="\t", header=None)
+                    list_df.append(bin_df)
+                
+                frame = pd.concat(list_df)
 
                 a = pybedtools.BedTool((self.bin_dir + "/" + bin_file))
-                b = pybedtools.BedTool(y)
-
-                print ("Intersect BED: Working on: " + f_name)
+                b = pybedtools.BedTool.from_dataframe(frame)
 
                 a_and_b = a.intersect(b, wa=True, wb=True)
 
                 os.chdir(intersect_dir)
-                make_set_dir("ChIP", False)
+                make_set_dir(bin_name, False)
 
-                c = a_and_b.moveto(n + base + m + ".bed")
+                f_name = bin_name + "_" + base + "_" + m + ".bed"
+                c = a_and_b.moveto(f_name)
 
-    def intersect_moods_bin(self, bin_file, MOODS_dir, intersect_dir, n):
+    def intersect_moods_bin(self, bin_file, MOODS_dir, intersect_dir, n, tf_names):
         os.chdir(MOODS_dir)
         y = glob.glob("*.bed")
-        p_val = y.replace("GM12878_DHS_MOTIFS_", "").replace(".bed", "")
         for i in y:
+            p_val = i.replace("GM12878_DHS_MOTIFS_", "").replace(".bed", "")
+
+            os.chdir(MOODS_dir)
+
             a = pybedtools.BedTool((self.bin_dir + "/" + bin_file))
             b = pybedtools.BedTool(i)
             a_and_b = a.intersect(b, wa=True, wb=True)
 
             os.chdir(intersect_dir)
-            snippets.make_set_dir("DHS", False)
-            c = a_and_b.moveto(n + p_val + ".bed")
+            make_set_dir(n, False)
+
+            c = a_and_b.moveto(n + "_MOODS_" + p_val + ".bed")
             
 class MARIO:
     def __init__(self, chip_bed, percentile, blacklist):
@@ -246,20 +243,32 @@ class MARIO:
     def parse_singles_percentile(self, df, percentile):
         df["file_path"].apply(parse_percentile, args = (df, percentile, True, self.blacklist))
 
-    def parse_replicate_percentile(self, df, percentile):
+    def parse_replicate_percentile(self, df, percentile, og_dir, modes, tf_df):
         df["file_path"].apply(parse_percentile, args = (df, percentile, False, self.blacklist))
 
-    def merge_replicate_BEDS(self, df, og_dir, modes, tf_df):
         tf = pd.DataFrame(tf_df)
         tf[0].apply(merge_rep_BEDS, args = (df, og_dir, modes))
 
 class META:
-    def __init__(self, META, chip_bed):
+    def __init__(self, META, chip_bed, tf_name_file):
         self.META_data = META
         self.chip_bed = chip_bed
         self.exclude_list = ["viral_protein", "H3K27ac", "H3K27me3", "H3K36me3", "H3K4me1", "H3K4me2", "H3K4me3", "H3K9ac", "H3K9me3", "H3K79me2"]
+    
+        # Create an empty dataframe
+        df_dict = pd.DataFrame()
 
-    def META_parse(self):
+        # Create a DF from TF_FILE_associations
+        TF_df = pd.read_csv(tf_name_file, sep="\t", header=0)
+        df_dict["Motif"] = TF_df["Motif_ID"]
+        df_dict["TF"] = TF_df["TF_Name"]
+        df_dict.set_index("Motif")
+
+        #Create a dictionary of all TF and Motif associations
+        dicted = dict(zip(df_dict.Motif, df_dict.TF))
+
+        self.tf_dict = dicted
+
         df = pd.read_csv(self.META_data, sep="\t", header=None, usecols=[1, 13], names=["Sample_Name", "info"])
 
         df["TF"] = df["info"].str.split(":").str[3]
@@ -297,6 +306,8 @@ class META:
 
         unique_MODES = CHIP_df["MODE"].unique()
 
+        unique_TFS = CHIP_df["TF_Name"].unique()
+
         self.unique_TF_single_names = unique_TF_single
         self.unique_TF_reps_names = unique_TF_reps
         self.unique_MODES = unique_MODES
@@ -304,6 +315,8 @@ class META:
         self.unique_tf_single_df = unique_tf_single_df
         self.unique_tf_rep_df = unique_tf_rep_df
         self.chip_df = CHIP_df
+
+        self.unique_TFS = unique_TFS
 
 class MOODS:
     """This object is being used to store the information and process
@@ -314,65 +327,27 @@ class MOODS:
         3) output_dir"""
 
     # Initialize class with these parameters
-    def __init__(self, file_path, tf_name_file, output_dir, domain_bed):
+    def __init__(self, file_path, output_dir, domain_bed, tf_dict, unique_TFS):
         self.file_path = file_path
-        self.tf_name_file = tf_name_file
         self.output_file_directory = output_dir
-        self.column_names = ['PEAK_ID', 'PWM_FILE', 'TF_START', 'STRAND', 'MATCH_SCORE', 'MOTIF_SEQ']
+        self.column_names = ['PEAK_ID', 'PWM_FILE', 'TF_START', 'MOTIF_SEQ']
         self.column_types = {
-            'PEAK_ID': "category",
-            'PWM_FILE': "category",
-            'TF_START': "uint16",
-            'STRAND': "category",
-            'MATCH_SCORE': "float32",
-            'MOTIF_SEQ': "category"
-        }
+            'PEAK_ID':          "category",
+            'PWM_FILE':         "category",
+            'TF_START':         "uint16",
+            'MOTIF_SEQ':        "category"}
+       
         self.domain_bed = domain_bed
 
-    def bed_intersect(self):
-        a = pybedtools.BedTool(self.moods_bed)
-        b = pybedtools.BedTool(self.domain_bed)
-
-        a_and_b = a.intersect(b, wa=True, wb=True)
-
-        c = a_and_b.moveto(self.moods_bed)
-
-        df = c.to_dataframe()
-
-        self.intersect_df = df
-
-    def dict_TF_df(self):
-        # Create an empty dataframe
-        df = pd.DataFrame()
-
-        # Create a DF from TF_FILE_associations
-        TF_df = pd.read_csv(self.tf_name_file, sep="\t", header=0)
-        df["Motif"] = TF_df["Motif_ID"]
-        df["TF"] = TF_df["TF_Name"]
-        df.set_index("Motif")
-
-        #Create a dictionary of all TF and Motif associations
-        dicted = dict(zip(df.Motif, df.TF))
-
-        self.tf_dict = dicted
-
-    def domain_parse(self):
-        self.intersect_df["SUB_ID"] = self.intersect_df[5] + "_" + self.intersect_df[6].apply(str) + "_" + self.intersect_df[7].apply(str)
-
-        x = self.intersect_df[[0, 1, 2, 4, 3, 8, "SUB_ID"]]
-
-        MOODS_HITS_FN = self.moods_bed.replace(".txt", ".bed")
-
-        x.to_csv(MOODS_HITS_FN, sep="\t", header = False, index=False)
-
-        self.moods_bed_intersect =  MOODS_HITS_FN
-
-    def parse_moods(self):
         # Create a DF of the MOODs file, setting dtypes, columns, and names
-        df = pd.read_csv(self.file_path, usecols=[0,1,2,3,4,5], names=self.column_names, dtype=self.column_types, header=None, sep="|")
+        df = pd.read_csv(self.file_path, usecols=[0,1,2,5], names=self.column_names, dtype=self.column_types, header=None, sep="|", low_memory=False)
 
         #Parse through the file and extract names, frames, etc
         df['PWM_FILE'] = df['PWM_FILE'].str.replace('_JASPAR.txt.pfm', '')
+        
+        df["TF_Name"] = df["PWM_FILE"].map(tf_dict)
+
+        df = df[df['TF_Name'].isin(unique_TFS)]
 
         df_tmp1 = df['PEAK_ID'].str.split(":", expand=True)
         df_tmp2 = df_tmp1[1].str.split("-", expand=True)
@@ -394,7 +369,6 @@ class MOODS:
         df["MOTIF_POS"] = df["chr"] + "_" + df["TF_start"].apply(str) + "_" + df["TF_end"].apply(str)
 
         df["MOTIF_LEN"] = df["TF_end"] - df["TF_start"] + 1
-        df["TF_Name"] = df["PWM_FILE"].map(self.tf_dict)
 
         #Not sure if the below code is faster or if copy the DF over itself is faster
         #df.drop(columns=["TF_START", "PWM_FILE", "MATCH_SCORE", "MOTIF_POS", "MOTIF_LEN", "MOTIF_SEQ", "STRAND", "start", "stop"], inplace=True)
@@ -406,6 +380,72 @@ class MOODS:
 
         df.sort_values(by=['chr', "TF_start", "TF_end"], inplace=True)
 
-        df.to_csv(MOODS_HITS_BED, sep="\t", index=False, header=False)
-
         self.moods_bed = MOODS_HITS_BED
+
+        a = pybedtools.BedTool.from_dataframe(df)
+
+        del df
+
+        b = pybedtools.BedTool(self.domain_bed)
+
+        a_and_b = a.intersect(b, wa=True, wb=True)
+
+        c = a_and_b.moveto(self.moods_bed)
+
+        df = c.to_dataframe()
+
+        df["SUB_ID"] = df[5] + "_" + df[6].apply(str) + "_" + df[7].apply(str)
+
+        MOODS_HITS_FN = self.moods_bed.replace(".txt", ".bed")
+
+        df.to_csv(MOODS_HITS_FN, sep="\t", header = False, index=False, columns= [0, 1, 2, 4, 3, 8, "SUB_ID"])
+
+        self.moods_bed_intersect =  MOODS_HITS_FN
+
+class RESULTS:
+    def __init__(self):
+        self.column_types = {
+            'BIN_ID': "category",
+            'TF_NAME': "category"}
+
+    def parse_MOODS(self):
+        MOODS_file_list = glob.glob("*.bed")
+        MOODS_df_list = []
+
+        for i in MOODS_file_list:
+            df = pd.read_csv(i, sep="\t", 
+                            header=None,
+                            usecols=[6, 10],
+                            dtype=self.column_types,
+                            names=self.column_types.keys())
+            df["SET_ID"] = i
+            MOODS_df_list.append(df)
+
+        MOODS_con = pd.concat(MOODS_df_list)
+
+        del MOODS_df_list
+
+        gbm = MOODS_con.groupby(["SET_ID", df.BIN_ID.astype(object), df.TF_NAME.astype(object)]).count()
+
+        return gbm
+
+    def parse_CHIP(self):
+        CHIP_FILE_LIST = glob.glob("*.bed")
+        CHIP_DF_LIST = []
+
+        for i in CHIP_FILE_LIST:
+            df = pd.read_csv(i, sep="\t", 
+                            header=None,
+                            usecols=[6, 10],
+                            dtype=self.column_types,
+                            names=self.column_types.keys())
+            df["SET_ID"] = i
+            CHIP_DF_LIST.append(df)
+
+        CHIP_con = pd.concat(CHIP_DF_LIST)
+        
+        del CHIP_DF_LIST
+
+        gbc = CHIP_con.groupby(["SET_ID", df.BIN_ID.astype(object), df.TF_NAME.astype(object)]).count()
+
+        return gbc
