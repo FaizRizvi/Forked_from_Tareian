@@ -5,7 +5,6 @@ import os
 import sys
 import argparse
 import pandas as pd
-import seaborn as sns
 import pybedtools
 import math
 import numpy as np
@@ -14,7 +13,6 @@ import glob
 from itertools import groupby, chain
 from collections import OrderedDict
 from os import walk
-import time
 import itertools
 
 def make_set_dir(x, y):
@@ -215,6 +213,65 @@ def pybedtools_intersect(x, y):
     bed_intersect = bed_1.intersect(bed_2, wa=True, wb=True)
 
     return bed_intersect
+
+def priorTable2Sparse(x, y, z):
+    out_sparse = z + y + "_sp.txt"
+    
+    df = pd.read_csv(x, sep="\t", header=0, index_col=0, low_memory=False)
+
+    df_prior = df.unstack().reset_index(name="Weight")
+
+    df_prior.columns = ["regulator", "target", "weight"]
+    
+    df_prior = df_prior[df_prior.weight != 0]
+
+    gb_TF = df_prior.groupby("regulator").count()
+
+    gb_TF.drop("weight", axis=1, inplace=True)
+
+    gb_TF.reset_index(inplace=True)
+
+    df_prior.to_csv(out_sparse, sep="\t", index=False)
+
+    print(gb_TF)
+    print (str(len(df_prior.index)) + ' interactions.')
+    print (str(len(df_prior["target"].unique())) + ' genes with at least one TF interaction.')
+    print (str(len(df_prior["regulator"].unique())) + ' total TFs in prior.')
+    print (out_sparse + ' generated.')
+
+    return df
+
+def mergeDegeneratePriorTFs(x, y):
+    out_merged_sparse = y + '_merged_sp.tsv'
+    out_merged = y + '_merged.tsv'
+
+    df_trans = x.transpose()
+
+    df_trans["sum"] = df_trans.sum(axis=1)
+    
+    df_trans["count"] = 0
+
+    gp_num = df_trans.groupby("sum").count()
+
+    df_merge = gp_num[gp_num["count"] > 1]
+    
+    df_merge.reset_index(inplace=True)
+
+    keep = list(df_merge["sum"])
+
+    df_merge_names = df_trans.loc[df_trans['sum'].isin(keep)]
+
+    df_merge_names.sort_values("sum")
+
+    df_merge_names["is_dup"] = df_merge_names.duplicated()
+    
+    tf_to_merge = df_merge_names[df_merge_names["is_dup"] == True]
+
+    if len(tf_to_merge) == 0:
+        print("No TFs to merge")
+    
+    else:
+        x.to_csv(out_merged_sparse, sep="\t")
 
 class BINS:
     def __init__(self, path, DHS_BED, bin_dir, ofd, ChIP_dir):

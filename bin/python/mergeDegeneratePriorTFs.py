@@ -1,63 +1,7 @@
-#!/usr/bin/python
-
-Usage = """
-mergeDegeneratePriorTFs.py
-Given degeneracy of TF motifs, many priors based on ATAC-seq data contain TFs with identical
-target genes and interaction strengths.  This function creates meta-TFs (whose name will 
-be a compound of individual TFs in the merge (e.g., TF1_TF2...)).  Note: because mergers
-often contained many TF names, we cut off at the first two, and then user can track down
-the rest of the group in the merger file below  
-USAGE:
-	python ${scriptHome}/mergeDegeneratePriorTFs.py networkFile outFileBase
-INPUTS:
-	networkFile -- three column tab-separated format: TF, target genes, interaction weight (w/ header)
-	outFileBase -- output file base name
-OUTPUTS:
-	0. new networkFile, where meta-TF names replace individual TFs with identical targets
-	netOutFile = outFileBase + '_merged_sp.tsv'
-	1. a target overlap table (TF X TF) w/ # of of overlapping targets
-	overlapsOutFile = outFileBase + '_overlaps.txt'
-	2. a table, containing number of targets per TF	
-	targetTotalsFile = outFileBase + '_targetTotals.txt'
-	3. a table, column 1 = abbreviated merged TF name, column 2 = all TFs included in merger
-	mergedTfsFile = outFileBased + '_mergedTfs.txt'
-
-"""	
-
-import os
-import sys
-import re
-import itertools
-import cPickle as pickle
-import numpy
-import errno
-from scipy.stats import hypergeom
-import glob
-
-## Debugging Inputs:
-# sys.argv = ["/Users/emiraldi/erm/MariaP/bin/mergeDegeneratePriorTFs.py",
-# 	"/Users/emiraldi/erm/Shared/Jason-Maria-Emily/fiveILCquantAtacNetworks/ILCs150523_qc_max4_body_bp10000_pFDR10_FC1_gFDR10_FC1/ILCnets_pFDR10_FC1_gFDR10_FC1_rawp0001_hyg001_famShare/CCR6pILC3_SI_sp.tsv", #/Users/emiraldi/erm/Shared/Jason-Maria-Emily/ILCquantAtacNetworks/Genesets_FDR10/ILCs150523_qc_max4_body_bp10000_2comb/ILCnets_pFDR10_FC1_rawp0001_hyg001_famShare/ILC3_sp.tsv",
-# 	"/Users/emiraldi/erm/Shared/Jason-Maria-Emily/fiveILCquantAtacNetworks/ILCs150523_qc_max4_body_bp10000_pFDR10_FC1_gFDR10_FC1/ILCnets_pFDR10_FC1_gFDR10_FC1_rawp0001_hyg001_famShare/CCR6pILC3_SI"]
-# sys.argv = ['/Users/emiraldi/erm/MariaP/bin/mergeDegeneratePriorTFs.py',
-# 	'/Users/emiraldi/erm/MariaP/Inferelator/input/GeneralPriors/mm10_merged/ilc/amitILC_cut4_bp10000_sATAC_p1Em4_huA_sp.tsv',
-# 	'/Users/emiraldi/Desktop/test']
-
-
-if len(sys.argv) < 3:
-	print Usage
-	sys.exit(1)
 
 networkFile = sys.argv[1]
 outFileBase = sys.argv[2]
 
-## Strategy
-# 1. Parse Network file
-#		tfTargDic : key = TF name, item = list of target genes
-# 2. Determine overlaps among each TF pair.  Make a dictionary of TFs to merge:
-#		key = TF, item = merge group name
-# 3. Output
-
-# 1. Parse Network file
 netIn = open(networkFile,'r')
 tfTargDic = dict()
 for line in itertools.islice(netIn,1,None): # skip line 1, as it's a header
