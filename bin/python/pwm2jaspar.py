@@ -8,16 +8,22 @@ import os
 parser = argparse.ArgumentParser()
 
 parser.add_argument("-m", "--matrix", dest='matrix', help="Input PWM", required=True)
-parser.add_argument("-o", "--output", dest='output', help="Output directory", required=True)
+parser.add_argument("-o", "--output", dest='OUT_DIR', help="Output directory", required=True)
 
 args = parser.parse_args()
 
-for i in args.matrix:
-    pwm_basename = os.path.splitext(i)[0]
-    pwm_outname = str(args.output) + "/" + pwm_basename + "_JASPAR.txt"
-    
-    df = pd.read_csv(str(i), header=0, index_col=0, sep="\t")
-    
-    df_trans = df.transpose()
-    
-    df_trans.to_csv(pwm_outname, sep="\t", index=False, header=False)
+if not os.path.exists(args.OUT_DIR):
+        os.makedirs(args.OUT_DIR)
+
+os.chdir(args.OUT_DIR)
+
+base = os.path.basename(args.matrix)
+pwm_basename = os.path.splitext(base)[0]
+
+pwm_outname = str(args.OUT_DIR) + "/" + pwm_basename + "_JASPAR.txt"
+
+df = pd.read_csv(str(args.matrix), header=0, index_col=0, sep="\t")
+
+df_trans = df.transpose()
+
+df_trans.to_csv(pwm_outname, sep="\t", index=False, header=False)

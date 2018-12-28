@@ -1,20 +1,6 @@
 #!/usr/bin/env python
 from __future__ import print_function
 
-Usage = """
-priorsTable2Sparse.py
-convert a prior in table format (columns = regulators, rows = gene targets) into a sparse,
-3-column format (regulator, row, interaction strength)
-Usage: python ${scriptHome}/priorsTable2Sparse.py
-INPUTS:
-	priorTable -- tab-delimited file, columns = regulators, rows = gene targets, values = 
-		interaction strengths 
-	outFileName -- name for output file	
-OUTPUTS:
-	priorTable_sp -- sparse, 3-column output: 
-		regulator, target, and interaction strength
-"""	
-
 import pandas as pd
 import seaborn as sns
 import os

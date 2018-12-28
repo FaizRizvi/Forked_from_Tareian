@@ -54,9 +54,9 @@ usedMergedTfs = list()	# keep tracks of used TFs, so we don't output mergers twi
 printedTfs = list()
 overlapsToPrint = dict() # key = printTfName, item = overlaps with other TFs
 netOutFile = outFileBase + '_merged_sp.tsv'
-overlapsOutFile = outFileBase + '_overlaps.txt'
-targetTotalsFile = outFileBase + '_targetTotals.txt'
-mergedTfsFile = outFileBase + '_mergedTfs.txt'
+overlapsOutFile = outFileBase + '_overlaps.tsv'
+targetTotalsFile = outFileBase + '_targetTotals.tsv'
+mergedTfsFile = outFileBase + '_mergedTfs.tsv'
 netOut = open(netOutFile,'w')
 netOut.write('Regulator\tTarget\tWeight\n')
 overlapsOut = open(overlapsOutFile,'w')
