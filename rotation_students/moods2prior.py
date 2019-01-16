@@ -38,8 +38,6 @@ basename = os.path.splitext(base)[0]
 # Set up the file names based on the basename
 name_piv = basename + "_TSS_10kb_prior_sum.txt"
 name_binary = basename + "_TSS_10kb_prior_binary.txt"
-name_TAD = basename + "_prior_TAD_sum.txt"
-name_TAD_binary = basename + "_prior_TAD_binary.txt"
 
 ##########################-----------LOAD TF INFORMATION------------##############################
 print("Loading and Parsing TF Information")
@@ -73,29 +71,9 @@ df_intersect = bed_TSS_and_bed_moods.to_dataframe(names=columns, usecols=keep)
 
 df_intersect["Gene_Symbol"] = df_intersect["Gene_name"].map(dict_gene)
 
-##########################-----------Intersect TADS------------##############################
-#print("Intersecting BEDS")
-
-#bed_domain = snippets.pybedtools_intersect(args.TSS, args.DOMAIN)
-
-##bed_domain_moods = bed_moods.intersect(bed_domain, wa=True, wb=True)
-
-#columns2 = ["TF_chr", "TF_start", "TF_end", "TF_name", "PEAK_ID", "Gene_chr", "Gene_start", "Gene_end", "Gene_name", "Gene_strand", "Dom_chr", "Dom_start", "Dom_end", "Dom_Name", "Num", "Dot", "dom_start", "dom_end", "rgb"]
-#keep2 = ["TF_name", "PEAK_ID", "Dom_chr", "Dom_start", "Dom_end", "Dom_Name", "Gene_name"]
-
-#df_domain_mood = bed_domain_moods.to_dataframe(names=columns2, usecols=keep2)
-
-#df_domain_mood["DOMAIN_ID"] = df_domain_mood["Dom_chr"] + "_" + df_domain_mood["Dom_start"].apply(str) + "_" + df_domain_mood["Dom_end"].apply(str) + "_" + df_domain_mood["Dom_Name"]
-
-#df_domain_mood["Gene_Symbol"] = df_domain_mood["Gene_name"].map(dict_gene)
-
 ##########################-----------Count and Pivot------------##############################
 print("Counting and pivoting DF")
 
 # Create the 10kb prior
 snippets.generate_prior(df_intersect, ["Gene_Symbol", "TF_name"], name_piv, args.OUT_DIR, False)
 snippets.generate_prior(df_intersect, ["Gene_Symbol", "TF_name"], name_binary, args.OUT_DIR, True)
-
-# Create the TAD based prior
-#snippets.generate_prior(df_domain_mood, ["DOMAIN_ID", "Gene_Symbol", "TF_name"], name_TAD, args.OUT_DIR, False)
-#snippets.generate_prior(df_domain_mood, ["DOMAIN_ID", "Gene_Symbol", "TF_name"], name_TAD_binary,  args.OUT_DIR, True)
