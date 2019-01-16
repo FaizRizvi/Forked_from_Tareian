@@ -180,7 +180,7 @@ echo "Removing mitochondrial data"
 noMito="${sampleName}_noMito"
 
 echo "bamutils filter ${deduped}.bam outBound/${noMito}.bam -excluderef chrM && rm ${deduped}.bam"
-bamutils filter ${deduped}.bam outBound/${noMito}.bam -excluderef chrM && rm ${deduped}.bam
+bamutils filter ${deduped}.bam outBound/${noMito}.bam -excluderef chrM 
 
 samtools index outBound/${noMito}.bam
 

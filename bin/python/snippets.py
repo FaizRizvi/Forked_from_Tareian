@@ -150,7 +150,7 @@ def parse_moods(x, y):
     columns = ['ID', 'Motif', 'TF_pos', 'Motif_sequence']
     col_types = {"ID": "object", "Motif": "object", "TF_pos": "uint16", "Motif_sequence": "object"}
 
-    df_moods = pd.read_csv(x, sep="|", usecols=[0,1,2,5], header=None, names=columns, dtype=col_types)
+    df_moods = pd.read_csv(x, sep="|", usecols=[0,1,2,5], header=None, names=columns, dtype=col_types, low_memory=False)
 
     df_moods["Motif"] = df_moods["Motif"].str.split('_').str[0]
 
@@ -158,13 +158,14 @@ def parse_moods(x, y):
 
     df_moods["Chr"], df_moods["Coord"] = df_moods["ID"].str.split(':').str
 
-    df_moods["Start"], df_moods["Stop"] = df_moods["Coord"].str.split("-").str
+    #df_moods["Start"], df_moods["Stop"] = df_moods["Coord"].str.split("-").str
 
-    df_moods["TF_start"] = df_moods["Start"].apply(int) + 1 + df_moods["TF_pos"].apply(int)
+    #df_moods["TF_start"] = df_moods["Start"].apply(int) + 1 + df_moods["TF_pos"].apply(int)
+    df_moods["TF_start"] = df_moods["Coord"].str.split("-").str[0].apply(int) + 1 + df_moods["Coord"].str.split("-").str[1].apply(int)
+
     df_moods["TF_end"] = df_moods["TF_start"] + df_moods["Motif_sequence"].str.len() - 1
-    df_moods["PEAK_ID"] = df_moods["Chr"] + "_" + df_moods["Start"].map(str) + "_" + df_moods["Stop"].map(str)
 
-    order= ["Chr", "TF_start", "TF_end", "TF_Name", "PEAK_ID"]
+    order= ["Chr", "TF_start", "TF_end", "TF_Name", "ID"]
 
     df_moods = df_moods[order]
 
@@ -172,35 +173,39 @@ def parse_moods(x, y):
     
     return bed_moods
 
-def generate_prior(BED, GROUPER, FILENAME, OUT_DIR, BINARY):
+def generate_prior(BED, GROUPER, FILENAME, OUT_DIR, FILENAME_BINARY):
     basename = os.path.splitext(FILENAME)[0]
     out_sparse = OUT_DIR + "/" + basename + "_sp.txt"
     out_merged = OUT_DIR + "/" + basename + '_merged.tsv'
     out_merged_sparse = OUT_DIR + "/" + basename + '_merged_sp.tsv'
-
     merged_filename = OUT_DIR + "/" + basename + '_merged.meta'
+    out_sparse_bin = OUT_DIR + "/" + basename + "_binary_sp.txt"
 
     df_gb = BED.groupby(GROUPER).count()
     df_gb.reset_index(inplace=True)
 
-    df_piv = df_gb.pivot_table(index="Gene_Symbol", columns="TF_name", values="PEAK_ID", aggfunc=np.sum)
-    df_piv = df_piv.fillna(0)
+    df_piv = df_gb.pivot_table(index="Gene_Symbol", columns="TF_name", values="Gene_name", aggfunc=np.sum)
+    df_piv.fillna(0, inplace=True)
     
-    if BINARY == True:
-        df_piv = df_piv.apply(lambda x: [y if y <= 1 else 1 for y in x])
-        header = "Binary"
+    #print(df_piv)
     
-    else:
-        header = "Sum"
+    #df_bin = df_piv.apply(lambda x: [y if y <= 1 else 1 for y in x])
+    #print(df_bin)
+    #df_bin.to_csv(FILENAME_BINARY, sep="\t")
 
-    df_piv.to_csv(FILENAME, sep="\t", index_label=False)
+    df_piv.to_csv(FILENAME, sep="\t")
     
     df_prior = df_piv.unstack().reset_index(name="Weight")
     df_prior.columns = ["regulator", "target", "weight"]
     df_prior = df_prior[df_prior.weight != 0]
     df_prior.to_csv(out_sparse, sep="\t", index=False)
     
-    print ("################## " +  header + " ##################")
+    #df_prior_bin = df_bin.unstack().reset_index(name="Weight")
+    #df_prior_bin.columns = ["regulator", "target", "weight"]
+    #df_prior_bin = df_prior_bin[df_prior_bin.weight != 0]
+    #df_prior_bin.to_csv(out_sparse_bin, sep="\t", index=False)
+    
+    print ("################## sum ##################")
     print (str(len(df_prior.index)) + ' interactions.')
     print (str(len(df_prior["target"].unique())) + ' genes with at least one TF interaction.')
     print (str(len(df_prior["regulator"].unique())) + ' total TFs in prior.')
@@ -245,11 +250,11 @@ def generate_prior(BED, GROUPER, FILENAME, OUT_DIR, BINARY):
     df_prior.columns = ["regulator", "target", "weight"]
     df_prior = df_prior[df_prior.weight != 0]
     
-    df_piv.to_csv(out_merged, sep="\t", index_label=False)
+    df_piv.to_csv(out_merged, sep="\t")
 
     df_prior.to_csv(out_merged_sparse, sep="\t", index=False)
    
-    print ("################## " +  header + " - merged" + "##################")
+    print ("################## sum - merged ##################")
     print (str(len(df_prior.index)) + ' interactions.')
     print (str(len(df_prior["target"].unique())) + ' genes with at least one TF interaction.')
     print (str(len(df_prior["regulator"].unique())) + ' total TFs in prior.')

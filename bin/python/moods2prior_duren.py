@@ -93,8 +93,7 @@ df_intersect["Gene_Symbol"] = df_intersect["Gene_name"].map(dict_gene)
 print("Counting and pivoting DF")
 
 # Create the 10kb prior
-snippets.generate_prior(df_intersect, ["Gene_Symbol", "TF_name"], name_piv, args.OUT_DIR, False)
-snippets.generate_prior(df_intersect, ["Gene_Symbol", "TF_name"], name_binary, args.OUT_DIR, True)
+snippets.generate_prior(df_intersect, ["Gene_Symbol", "TF_name"], name_piv, args.OUT_DIR, name_binary)
 
 # Create the TAD based prior
 #snippets.generate_prior(df_domain_mood, ["DOMAIN_ID", "Gene_Symbol", "TF_name"], name_TAD, args.OUT_DIR, False)
