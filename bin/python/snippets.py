@@ -16,6 +16,69 @@ from os import walk
 import itertools
 import re
 
+def hg19_UCSC_to_Gene_Name(x):
+
+
+    df_kgXref = pd.read_csv(x, sep="\t", header=0,dtype={'rfamAcc': str, 'tRnaName': str})
+    df_UCSC_Gene_Name = pd.DataFrame()
+    df_UCSC_Gene_Name["UCSC_ID"] = df_kgXref["#kgID"]
+    df_UCSC_Gene_Name["Gene_Symbol"] = df_kgXref["geneSymbol"]
+    df_UCSC_Gene_Name.set_index("UCSC_ID")
+
+    dict_UCSC_Gene_Name = dict(zip(df_UCSC_Gene_Name.UCSC_ID, df_UCSC_Gene_Name.Gene_Symbol))
+
+    return dict_UCSC_Gene_Name
+
+def mm10_UCSC_to_Gene_Name(x):
+    df_mm10_UCSC_Gene_Name = pd.read_csv(x, sep = "\t", header = 0)
+    columns = ["Gene_Name", "UCSC_Stable_ID"]
+    df_mm10_UCSC_Gene_Name.columns = columns
+
+    new_df = pd.DataFrame()
+    new_df["UCSC_Stable_ID"] = df_mm10_UCSC_Gene_Name["UCSC_Stable_ID"]
+    new_df["Gene_Name"] = df_mm10_UCSC_Gene_Name["Gene_Name"]
+    new_df.set_index("UCSC_Stable_ID")
+
+    dict_mm10_GSM_Gene_Name = dict(zip( new_df.UCSC_Stable_ID, new_df.Gene_Name))
+    return dict_mm10_GSM_Gene_Name
+
+
+def GEO_to_TF(y):
+    #read the CHIP seq data file as csv
+    #this is the file given by Sreeja
+    df_GEO = pd.read_csv(y, sep="\t", header=0)
+    #Make column names and add them to the df
+    columns = ["GSE_ID", "GSM_ID", "SRR#", "CELL_TYPE", "MOLECULE"]
+    df_GEO.columns = columns
+
+    #Add new column to df_GEO, splittling the MOLECULE column by : and picking the last string element
+    #this give us the TF
+    df_GEO["TF"] = df_GEO["MOLECULE"].str.split(":").str[3]
+
+    #Use code similar to this to merge data on known TFs that we are interested in
+    #common_GSM_id = pd.merge(df_GEO, df_GSM_id_filename, how='inner', on=['GSM_ID'])
+
+    ##Pull only the GSM_IDs and TFs columns
+    ##df_GSM_ID_TF = common_GSM_id.loc[:, ['GSM_ID', 'TF']]
+
+    #pull the GSM_ID and TF into a new df
+    df_GSM_ID_TF = pd.DataFrame()
+    df_GSM_ID_TF["GSM_ID"] = df_GEO["GSM_ID"]
+    df_GSM_ID_TF["TF"] = df_GEO["TF"]
+    df_GSM_ID_TF.set_index("GSM_ID")
+
+    #Known tf given by emily and this is hardcoded
+    Known_TF = pd.read_csv('/Users/war9qi/Faiz_Workspace/meta/tf_geneSymbol_human_weirauch.txt')
+    columns = ["TF"]
+    Known_TF.columns = columns
+    #Merge dfs by same TF
+    df_GSM_ID_TF = pd.merge(df_GSM_ID_TF, Known_TF, how = 'inner')
+
+    dict_GSM_TF = dict(zip(df_GSM_ID_TF.GSM_ID, df_GSM_ID_TF.TF))
+
+    return dict_GSM_TF
+
+
 def make_set_dir(x, y):
     cwd = os.getcwd()
 
